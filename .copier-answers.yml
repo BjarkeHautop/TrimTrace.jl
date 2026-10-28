@@ -1,0 +1,13 @@
+# Changes here will be overwritten by Copier
+AddPrecommitUpdateCI: false
+Authors: Bjarke Hautop Kristensen <bjarke.hautop@gmail.com>
+JuliaMinVersion: '1.12'
+License: MIT
+LicenseCopyrightHolders: Bjarke Hautop Kristensen
+PackageName: TrimTrace
+PackageOwner: BjarkeHautop
+PackageUUID: d24e2464-b5b5-49d2-822d-39a9dd59af15
+StrategyConfirmIncluded: false
+StrategyLevel: 2
+StrategyReviewExcluded: true
+_src_path: /home/bjarke/.julia/packages/BestieTemplate/MPEqY

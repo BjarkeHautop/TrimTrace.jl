@@ -1,0 +1,14 @@
+name = "TrimTrace"
+uuid = "d24e2464-b5b5-49d2-822d-39a9dd59af15"
+version = "0.1.0"
+authors = ["Bjarke Hautop Kristensen <bjarke.hautop@gmail.com>"]
+
+[workspace]
+projects = ["test", "docs"]
+
+[deps]
+JuliaC = "acedd4c2-ced6-4a15-accc-2607eb759ba2"
+
+[compat]
+JuliaC = "0.3.12"
+julia = "1.12"
