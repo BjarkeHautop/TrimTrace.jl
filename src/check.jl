@@ -50,7 +50,7 @@ passed(result::TrimCheckResult) =
 
 """
     check(pkg::Module, sigs; allow = [], project = nothing, workdir = mktempdir(),
-          juliac_args = String[]) -> TrimCheckResult
+          julia_args = String[]) -> TrimCheckResult
 
 Compile the signatures `sigs` (or the file written by [`write_signatures`](@ref), when
 `sigs` is a path) with `juliac --trim=safe` and parse the verifier output.
@@ -62,7 +62,7 @@ Allowed signatures are still compiled, so entries that stop matching show up as 
 
 With `project = nothing`, a project holding only `pkg` and the packages the signatures
 reference is generated in `workdir`, which keeps juliac from instantiating unrelated test
-dependencies. `juliac_args` are appended to the juliac command line.
+dependencies. `julia_args` are passed to the Julia process that compiles the image.
 """
 function check(
     pkg::Module,
@@ -70,27 +70,26 @@ function check(
     allow = Union{String,Regex}[],
     project = nothing,
     workdir = mktempdir(),
-    juliac_args = String[],
+    julia_args = String[],
 )
     sigs = sigs isa AbstractString ? read_signatures(sigs) : sigs
     allow = allow isa AbstractString ? _read_lines(allow) : collect(allow)
     entry = entry_file(joinpath(workdir, "entry.jl"), pkg, sigs)
     project = project === nothing ? _write_project(workdir, pkg, sigs) : abspath(project)
     log = joinpath(workdir, "juliac.log")
-    args = [
-        "--output-o",
-        joinpath(workdir, "entry.o"),
-        "--project",
+    # Only the compile step is needed: the trim verifier runs while compiling the image.
+    image = JuliaC.ImageRecipe(;
+        output_type = "--output-o",
+        file = entry,
         project,
-        "--trim=safe",
-        "--experimental",
-        juliac_args...,
-        entry,
-    ]
+        trim_mode = "safe",
+        julia_args = ["--experimental"; julia_args],
+        img_path = joinpath(workdir, "entry.o.a"),
+    )
     compiled = open(log, "w") do io
         redirect_stdio(; stdout = io, stderr = io) do
             try
-                JuliaC.main(args)
+                JuliaC.compile_products(image)
                 true
             catch err
                 err isa ErrorException || rethrow()
@@ -131,7 +130,13 @@ function _signature_string(sig::Expr)
     kwargs = ""
     if is_kwcall && Meta.isexpr(params[2], :curly) && length(params[2].args) == 3
         keys = [k isa QuoteNode ? k.value : k for k in params[2].args[2].args]
-        types = params[2].args[3].args[2:end]
+        types_ex = params[2].args[3]
+        # The trace writes a homogeneous `Tuple{T, T, T}` as `NTuple{3, T}`.
+        types = if types_ex.args[1] === :NTuple
+            fill(types_ex.args[3], types_ex.args[2])
+        else
+            types_ex.args[2:end]
+        end
         kwargs = "; " * join(("$k::$T" for (k, T) in zip(keys, types)), ", ")
     end
     return "$callee($args$kwargs)"
@@ -266,9 +271,16 @@ function _parse_report(block)
             strip(line) for
             line in block[(trace_idx+1):end] if occursin(r"^\s*\[\d+\] ", line)
         ]
-    entry =
-        isempty(frames) ? _statement_callee(message) :
-        replace(last(frames), r"^\[\d+\] " => "")
+    frames = [replace(frame, r"^\[\d+\] " => "") for frame in frames]
+    # The innermost `entry_<i>` frame is the generated wrapper, which names the signature.
+    wrapper_idx = findlast(frame -> occursin(r"^entry_\d+\(", frame), frames)
+    entry = if wrapper_idx !== nothing
+        frames[wrapper_idx]
+    elseif isempty(frames)
+        _statement_callee(message)
+    else
+        last(frames)
+    end
     return TrimError(kind, message, entry, _is_value_dependent(message))
 end
 

@@ -9,16 +9,20 @@ typeof(f), A}` and constructor calls `Tuple{Type{T}, A}`.
 
 A signature is dropped when it cannot be evaluated outside the recording process (for
 example types defined in the test files), has a non-concrete argument type, or calls a
-name listed in `exclude`. A trailing `Vararg{A}` is replaced by a single `A`. The result is
-sorted and deduplicated.
+name listed in `exclude`. Unless `abstract_params = true`, it is also dropped when an
+argument type has an abstract type parameter, as in `Vector{Any}` or `Vector{NamedTuple}`:
+such containers come from tests passing mixed values and dispatch dynamically on their
+elements, which a trimmed caller would avoid. A trailing `Vararg{A}` is replaced by a
+single `A`. The result is sorted and deduplicated.
 """
-extract_signatures(pkg::Module, trace::AbstractString; exclude = Symbol[]) =
-    extract_signatures(pkg, [trace]; exclude)
+extract_signatures(pkg::Module, trace::AbstractString; kwargs...) =
+    extract_signatures(pkg, [trace]; kwargs...)
 
 function extract_signatures(
     pkg::Module,
     traces::AbstractVector{<:AbstractString};
     exclude = Symbol[],
+    abstract_params = false,
 )
     sandbox = _sandbox_module()
     public = Set(names(pkg))
@@ -32,7 +36,7 @@ function extract_signatures(
         catch
             continue
         end
-        name = _callee_name(pkg, public, sig)
+        name = _callee_name(pkg, public, sig, abstract_params)
         name === nothing || name in exclude || push!(sigs, _expand_vararg(tuple_ex))
     end
     return sort!(collect(sigs); by = string)
@@ -76,15 +80,21 @@ function _parse_trace_line(line::AbstractString)
 end
 
 # Returns the public name `sig` calls, or `nothing` when the callee is not public in `pkg`
-# or an argument type is not concrete.
-function _callee_name(pkg, public, sig)
+# or an argument type is not concrete (or, unless `abstract_params`, has an abstract type
+# parameter).
+function _callee_name(pkg, public, sig, abstract_params)
     sig isa DataType && sig <: Tuple || return nothing
     params = sig.parameters
     is_kwcall = !isempty(params) && params[1] === typeof(Core.kwcall)
     callee_idx = is_kwcall ? 3 : 1
     length(params) >= callee_idx || return nothing
     is_kwcall && !isconcretetype(params[2]) && return nothing
-    all(_is_valid_arg, params[(callee_idx+1):end]) || return nothing
+    args = params[(callee_idx+1):end]
+    all(_is_valid_arg, args) || return nothing
+    if !abstract_params
+        all(_has_concrete_params, args) || return nothing
+        is_kwcall && !_has_concrete_params(params[2]) && return nothing
+    end
 
     ft = params[callee_idx]
     obj = if ft isa DataType && isdefined(ft, :instance) && ft.instance isa Function
@@ -111,3 +121,15 @@ function _is_valid_arg(T)
     T isa Core.TypeofVararg && return isdefined(T, :T) && _is_valid_arg(T.T)
     return isconcretetype(T) || Base.isType(T)
 end
+
+# `false` when a type parameter of `T`, at any depth, is abstract, as in `Vector{Any}` or
+# `Vector{NamedTuple}`. A union of such concrete types, as in `Vector{Union{Nothing,Int}}`,
+# counts as concrete.
+function _has_concrete_params(T)
+    T isa Core.TypeofVararg && return !isdefined(T, :T) || _is_concrete_param(T.T)
+    T isa DataType && !Base.isType(T) || return true
+    return all(p -> !(p isa Type) || _is_concrete_param(p), T.parameters)
+end
+
+_is_concrete_param(p::Union) = all(_is_concrete_param, Base.uniontypes(p))
+_is_concrete_param(p) = Base.isType(p) || (isconcretetype(p) && _has_concrete_params(p))

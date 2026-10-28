@@ -63,6 +63,9 @@ function _signature_callee(sig::Expr)
     params = sig.args[2:end]
     ft = params[1] == :(typeof(Core.kwcall)) ? params[3] : params[1]
     target = ft.args[end]
-    target = Meta.isexpr(target, :curly) ? target.args[1] : target
+    # `Type{M.T{P} where P}` names the constructor `T`.
+    while Meta.isexpr(target, :where) || Meta.isexpr(target, :curly)
+        target = target.args[1]
+    end
     return Meta.isexpr(target, :.) ? target.args[2].value : target
 end

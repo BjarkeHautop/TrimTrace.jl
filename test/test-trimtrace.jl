@@ -36,6 +36,24 @@ end
     @test length(extract_signatures(TrimFixture, trace; exclude = [:stable, :Box])) == 2
 end
 
+@testitem "extract_signatures drops abstract type parameters" tags = [:unit] setup =
+    [Fixture] begin
+    using .Fixture: TrimFixture
+    trace = Fixture.trace_file([
+        "precompile(Tuple{typeof(TrimFixture.stable), Array{Any, 1}})",
+        "precompile(Tuple{typeof(TrimFixture.stable), Array{(NamedTuple{names, T} where T <: Tuple) where names, 1}})",
+        "precompile(Tuple{typeof(TrimFixture.stable), Array{Array{Real, 1}, 1}})",
+        "precompile(Tuple{typeof(Core.kwcall), NamedTuple{(:factor,), Tuple{Array{Any, 1}}}, typeof(TrimFixture.scaled), Int64})",
+        "precompile(Tuple{typeof(TrimFixture.stable), Array{Union{Nothing, Int64}, 1}})",
+        "precompile(Tuple{typeof(TrimFixture.stable), Base.RefValue{Type{Int64}}})",
+    ])
+    @test string.(extract_signatures(TrimFixture, trace)) == [
+        "Tuple{typeof(TrimFixture.stable), Array{Union{Nothing, Int64}, 1}}",
+        "Tuple{typeof(TrimFixture.stable), Base.RefValue{Type{Int64}}}",
+    ]
+    @test length(extract_signatures(TrimFixture, trace; abstract_params = true)) == 6
+end
+
 @testitem "signatures file round trip and uncovered" tags = [:unit] setup = [Fixture] begin
     using .Fixture: TrimFixture
     sigs = [
@@ -53,6 +71,8 @@ end
     @test read_signatures(path) == sort(sigs; by = string)
     @test uncovered(TrimFixture, sigs) == [:uncalled, :unstable]
     @test uncovered(TrimFixture, sigs; exclude = [:uncalled]) == [:unstable]
+    # A constructor recorded through a `where` clause still names its type.
+    @test TrimTrace._signature_callee(:(Tuple{Type{M.T{P} where P},Int64})) === :T
 end
 
 @testitem "entry_file wrappers make the recorded calls" tags = [:unit] setup = [Fixture] begin
@@ -95,6 +115,10 @@ end
     @test TrimTrace._signature_string(:(Tuple{Type{M.T},Int64,Int64})) ==
           "M.T(::Int64, ::Int64)"
     @test TrimTrace._signature_string(:(Tuple{typeof(M.g)})) == "M.g()"
+    ntuple_sig =
+        :(Tuple{typeof(Core.kwcall),NamedTuple{(:a, :b, :c),NTuple{3,Float64}},typeof(M.f)})
+    @test TrimTrace._signature_string(ntuple_sig) ==
+          "M.f(; a::Float64, b::Float64, c::Float64)"
 end
 
 @testitem "parse_juliac_log" tags = [:unit] begin
@@ -113,6 +137,8 @@ end
            @ TrimFixture src/TrimFixture.jl:15 [inlined]
          [2] entry_4(a1::Int64)
            @ Main.TrimTraceEntry entry.jl:20
+         [3] main(args::Vector{String})
+           @ Main.TrimTraceEntry entry.jl:40
 
         Warning #1: unresolved call from statement generate(
           getfield(::@NamedTuple{class::DataType}, :class::Symbol)::DataType
@@ -169,4 +195,10 @@ end
     result = check(TrimFixture, sigs; project = Fixture.DIR, allow = [r"\.unstable\("])
     @test passed(result)
     @test isempty(result.stale)
+
+    stable_sigs = filter(sig -> !occursin("unstable", string(sig)), sigs)
+    result = check(TrimFixture, stable_sigs; project = Fixture.DIR)
+    @test result.compiled
+    @test passed(result)
+    @test isempty(result.errors) && isempty(result.allowed)
 end

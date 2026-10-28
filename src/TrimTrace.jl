@@ -16,6 +16,7 @@ The workflow is:
 module TrimTrace
 
 using JuliaC: JuliaC
+using TOML: TOML
 
 export record,
     extract_signatures,
