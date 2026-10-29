@@ -5,7 +5,8 @@
 Run the test suite of `pkg` with tracing on and return the public signatures it called.
 
 The test file runs in a fresh Julia process with `--trace-compile` and `--trace-dispatch`,
-and the traces are filtered as [`extract_signatures`](@ref) does.
+and the traces are filtered as [`extract_signatures`](@ref) does, with the test environment
+added to the load path so types from packages only the tests load resolve.
 
 # Arguments
 - `pkg::Module`: the package under test.
@@ -66,11 +67,26 @@ function record(
         if !success(proc)
             @warn "The tests exited with code $(proc.exitcode); keeping the calls they made"
         end
-        sigs = extract_signatures(pkg, filter(isfile, traces); exclude, abstract_params)
+        sigs = _with_load_path(project) do
+            extract_signatures(pkg, filter(isfile, traces); exclude, abstract_params)
+        end
         isempty(sigs) && @warn "No public calls of $pkg were recorded"
         return sigs
     finally
         foreach(trace -> rm(trace; force = true), traces)
+    end
+end
+
+# Appends the test environment to the load path while `f` runs, so the traces can name
+# packages only the tests load (such as the trigger package of an extension) whatever
+# environment `record` is called from.
+function _with_load_path(f, project)
+    push!(LOAD_PATH, project)
+    try
+        return f()
+    finally
+        i = findlast(==(project), LOAD_PATH)
+        i === nothing || deleteat!(LOAD_PATH, i)
     end
 end
 

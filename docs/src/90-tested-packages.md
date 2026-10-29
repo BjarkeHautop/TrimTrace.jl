@@ -1,15 +1,32 @@
 # Tested packages
 
 Packages TrimTrace has been run against, what it found, and which reports are false alarms
-that belong in the package's allowlist. Each run was `record`, then `uncovered`, then
-`check` on the package's own test suite.
+that belong in the package's allowlist. Each run was [`record_and_check`](@ref) on the
+package's own test suite.
 
 Setup: Julia 1.13.2, JuliaC 0.3.12, run on 2026-10-29.
 
+## How the runs were made
+
+From a checkout of each package, with its test environment instantiated:
+
+```julia
+using TrimTrace, Sugiyama
+
+result = record_and_check(Sugiyama)
+display(result)
+uncovered(Sugiyama, result.signatures)
+```
+
+The same with `CausalStructures` in place of `Sugiyama`. Adding
+`allow = "test/trim-allow.txt"` with the suggested allowlists below makes both pass.
+
+## Results
+
 | Package | Tested at | Signatures | Uncovered | Errors (value-dependent) | Verdict |
 |---|---|---|---|---|---|
-| [Sugiyama.jl](https://github.com/BjarkeHautop/Sugiyama.jl) | [`ff0c4f6`](https://github.com/BjarkeHautop/Sugiyama.jl/commit/ff0c4f60846dcc5cb39961ce5aae092106a1f7f8) (v1.0.1) | 17 | 0 | 1 (1) | Trim-compatible; 1 false alarm |
-| [CausalStructures.jl](https://github.com/BjarkeHautop/CausalStructures.jl) | [`55646e2`](https://github.com/BjarkeHautop/CausalStructures.jl/commit/55646e2c16a06c1926380ff7a1111a9888fbfaba) (1.1.2-DEV) | 645 | 5 | 6 (6) | Trim-compatible; 6 false alarms |
+| [Sugiyama.jl](https://github.com/BjarkeHautop/Sugiyama.jl) | [`ff0c4f6`](https://github.com/BjarkeHautop/Sugiyama.jl/commit/ff0c4f60846dcc5cb39961ce5aae092106a1f7f8) (v1.0.1) | 18 | 0 | 1 (1) | Trim-compatible; 1 false alarm |
+| [CausalStructures.jl](https://github.com/BjarkeHautop/CausalStructures.jl) | [`dd8aaf4`](https://github.com/BjarkeHautop/CausalStructures.jl/commit/dd8aaf435823d7a9a2b004471c7a13df7d9d2755) (1.1.2-DEV) | 645 | 5 | 6 (6) | Trim-compatible; 6 false alarms |
 
 Uncovered counts the public functions and types that no recorded call reaches directly, so
 their trim compatibility is not checked. Their code may still run during the tests, inside
@@ -23,10 +40,10 @@ with a literal value under `--trim=safe`.
 
 ## Sugiyama.jl
 
-All public names are covered and 16 of the 17 signatures pass the trim verifier. They
+All public names are covered and 17 of the 18 signatures pass the trim verifier. They
 include calls through a layout object such as
-`(::Sugiyama.SugiyamaLayout{Float64, Float64})(::Array{Int64, 2})`, and sparse-matrix
-inputs that the package's hand-written trim entry does not exercise.
+`(::Sugiyama.SugiyamaLayout{Float64, Float64})(::Array{Int64, 2})`, a `Graphs.SimpleDiGraph`
+input through the Graphs extension, and sparse-matrix inputs that the package's hand-written trim entry does not exercise.
 
 The only report comes from the `Ptype` keyword, which picks the output point type. Passed
 as a runtime `DataType`, the layout's type cannot be inferred. Written with a literal, as

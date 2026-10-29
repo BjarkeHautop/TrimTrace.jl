@@ -34,7 +34,8 @@ Formatting is JuliaFormatter with `indent = 4`, `margin = 92`. The hooks include
 
 ## Architecture
 
-The pipeline is record → store → check; each stage is one file in `src/`.
+The pipeline is record → check, run together by `record_and_check` (locally or in CI);
+each stage is one file in `src/`, and `ci.jl` ties them together.
 
 - **`extract.jl`** parses `precompile(Tuple{...})` lines from trace files into `Expr`
   signatures. Each line is evaluated in a sandbox module that binds every loaded package
@@ -65,6 +66,14 @@ The pipeline is record → store → check; each stage is one file in `src/`.
     a `DataType`/`Symbol`/`Type{T}`-like value. Allowlist matching
     and `stale` entries are computed on those rendered strings, so changing the rendering
     changes the allowlist format.
+  - `check` also writes `signatures.txt` into `workdir` and keeps the signatures in the
+    result, so a run can be inspected afterwards.
+- **`ci.jl`** has `record_and_check` (record then check) and `write_ci_workflow`, which
+  writes a GitHub Actions job running it from an environment holding TrimTrace and the
+  dev'ed package.
+- `record` appends the test project to `LOAD_PATH` while extracting, and `_write_project`
+  falls back to already-loaded packages, so signatures naming test-only packages (e.g. an
+  extension's trigger) resolve whatever environment TrimTrace runs from.
 
 ## Tests
 

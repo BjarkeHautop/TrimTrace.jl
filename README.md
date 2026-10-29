@@ -8,14 +8,12 @@
 [![Docs workflow Status](https://github.com/BjarkeHautop/TrimTrace.jl/actions/workflows/Docs.yml/badge.svg?branch=main)](https://github.com/BjarkeHautop/TrimTrace.jl/actions/workflows/Docs.yml?query=branch%3Amain)
 [![BestieTemplate](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/JuliaBesties/BestieTemplate.jl/main/docs/src/assets/badge.json)](https://github.com/JuliaBesties/BestieTemplate.jl)
 
-Check that your package's public API compiles under `juliac --trim=safe`, using the calls
-your test suite already makes instead of writing them by hand.
+Check that your package's public API compiles under `juliac --trim=safe` by using the calls
+your test suite makes.
 
 TrimTrace runs your tests with `--trace-compile` and `--trace-dispatch`, keeps the concrete
-signatures of calls into the package's public names (including keyword and constructor
-calls, and calls to objects of its public types), and compiles them as trim entry points with
-[JuliaC](https://github.com/JuliaLang/JuliaC.jl). Each verifier error is reported against
-the signature it was reached from.
+signatures of calls into the package's public names, and compiles them as trim entry points with
+[JuliaC](https://github.com/JuliaLang/JuliaC.jl).
 
 ## Installation
 
@@ -28,39 +26,51 @@ Pkg.add(url = "https://github.com/BjarkeHautop/TrimTrace.jl")
 
 ## Usage
 
-There are two steps. First, record the signatures your tests call and commit them as a
-text file next to the tests. Then check that file, typically in CI, and record again
-whenever the tests change.
+`record_and_check` runs `test/runtests.jl` with tracing on, turns the recorded calls into
+an `entry.jl` of trim entry points, and compiles it with `juliac --trim=safe`.
+
+### In CI
+
+From the package root, generate the workflow once and commit it:
+
+```julia
+using TrimTrace
+write_ci_workflow()   # writes .github/workflows/TrimTrace.yml
+```
+
+The job runs `record_and_check` on every push and pull request and fails when a recorded
+call does not trim.
+
+### Locally
+
+Run the same check, and look at what was recorded:
 
 ```julia
 using TrimTrace, MyPackage
 
-# Record (rerun when the tests change); the file diffs cleanly, one signature per line.
-sigs = record(MyPackage)
-write_signatures("test/trim-signatures.txt", sigs)
-uncovered(MyPackage, sigs)   # public names no recorded call reaches
-
-# Check, e.g. in CI.
-result = check(MyPackage, "test/trim-signatures.txt"; allow = "test/trim-allow.txt")
+result = record_and_check(MyPackage; allow = "test/trim-allow.txt")
 display(result)
-passed(result) || exit(1)
+result.signatures                         # the recorded calls
+uncovered(MyPackage, result.signatures)   # public names no recorded call reaches
 ```
 
-`record` runs `test/runtests.jl` in a fresh Julia process and returns the concrete
-signatures it saw. `uncovered` lists the public names that no recorded call reaches, so
-you can see what the check misses. `check` compiles every signature as a trim entry point
-and returns the verifier reports, grouped by the signature they were reached from. An example output:
+`record` and `check` can also be ran as separate steps.
+
+### Output and allowlist
+
+The result lists the verifier reports, grouped by the signature they were reached from:
 
 ```text
 TrimTrace check failed: 2 errors (1 value-dependent), 0 warnings, 0 allowed
   1 x MyPackage.f(::Float64)
   1 x MyPackage.g(::Int64; kind::DataType) [value-dependent]
+Signatures checked: 14 (listed in /tmp/jl_.../signatures.txt)
 Full juliac output: /tmp/jl_.../juliac.log
 ```
 
-The allowlist holds known failures, one signature per line as the report prints it, or a
-pattern written as `r"..."` that covers several signatures at once (or pass a vector of
-strings and `Regex`es):
+An allowlist file holds known failures, one signature per line as the report prints it,
+or a pattern written as `r"..."` that covers several signatures at once (or pass a vector
+of strings and `Regex`es). The CI job uses `test/trim-allow.txt` when it exists:
 
 ```text
 # test/trim-allow.txt
@@ -70,7 +80,7 @@ r"^MyPackage\.g\(.*kind::DataType"
 
 ## Limitations
 
-- **Values are not recorded, only types.** If a test calls `g(10; kind = Foo)`, TrimTrace
+- **Only types are recorded.** If a test calls `g(10; kind = Foo)`, TrimTrace
   records "an `Int64` and some `DataType`", not `Foo` itself. Compiling that, the compiler
   cannot tell which type `kind` is, so trimming fails. A user who writes
   `g(10; kind = Foo)` in their own code is fine, because there the compiler sees `Foo`.
@@ -85,12 +95,11 @@ r"^MyPackage\.g\(.*kind::DataType"
 
 ## Documentation
 
-The [documentation](https://BjarkeHautop.github.io/TrimTrace.jl/dev) walks through each
-step, lists every function and keyword, and shows
-[TrimTrace run on real packages](https://BjarkeHautop.github.io/TrimTrace.jl/dev/90-tested-packages/)
-with what it found.
+See the [documentation](https://BjarkeHautop.github.io/TrimTrace.jl/dev) for more details.
 
 ## Related
 
-[TrimCheck.jl](https://github.com/tz-lom/TrimCheck.jl) checks hand-listed calls by running
-the trim verifier in a worker process instead of building with juliac.
+[TrimCheck.jl](https://github.com/tz-lom/TrimCheck.jl) also checks calls with the trim
+verifier, but the calls to check must be listed by hand. It runs the verifier directly in
+a Julia process, which depends on compiler internals; TrimTrace compiles with
+`juliac --trim=safe`.

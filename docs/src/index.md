@@ -20,37 +20,50 @@ Pkg.add(url = "https://github.com/BjarkeHautop/TrimTrace.jl")
 
 ## Workflow
 
-Record the signatures once and commit them next to the tests:
+[`record_and_check`](@ref) runs `test/runtests.jl` with `--trace-compile` and
+`--trace-dispatch`, keeps the calls into public names of the package, writes them as trim
+entry points to an `entry.jl`, and compiles that with `juliac --trim=safe`.
+
+### In CI
+
+Generate the workflow once from the package root and commit it:
+
+```julia
+using TrimTrace
+write_ci_workflow()   # writes .github/workflows/TrimTrace.yml
+```
+
+The job runs [`record_and_check`](@ref) on every push and pull request.
+
+### Locally
+
+Run the same check, or the steps on their own to look at what is recorded:
 
 ```julia
 using TrimTrace, MyPackage
 
-sigs = record(MyPackage)
-write_signatures("test/trim-signatures.txt", sigs)
+result = record_and_check(MyPackage; allow = "test/trim-allow.txt")
+result.signatures            # the recorded calls
+
+sigs = record(MyPackage)     # only record
 uncovered(MyPackage, sigs)   # public names no recorded call reaches
+check(MyPackage, sigs)       # only check
 ```
 
-[`record`](@ref) runs `test/runtests.jl` with `--trace-compile` and `--trace-dispatch` and
-keeps the calls into public names of the package. Calls with abstract argument types, or
-with types defined in the test files, are dropped. Record again when the tests change.
+### Output and allowlist
 
-Then check the file, typically as a separate CI job, since compiling takes a while:
-
-```julia
-result = check(MyPackage, "test/trim-signatures.txt"; allow = "test/trim-allow.txt")
-display(result)
-passed(result) || exit(1)
-```
+The check fails when a recorded call does not trim:
 
 ```text
 TrimTrace check failed: 2 errors (1 value-dependent), 0 warnings, 0 allowed
   1 x MyPackage.f(::Float64)
   1 x MyPackage.g(::Int64; kind::DataType) [value-dependent]
+Signatures checked: 14 (listed in /tmp/jl_.../signatures.txt)
 Full juliac output: /tmp/jl_.../juliac.log
 ```
 
-The allowlist can holds accepted report, each a signature as the report prints it or an
-`r"..."` pattern:
+An allowlist file holds accepted reports, each a signature as the report prints it or an
+`r"..."` pattern. The CI job uses `test/trim-allow.txt` when it exists:
 
 ```text
 MyPackage.f(::Float64)
@@ -59,11 +72,12 @@ r"^MyPackage\.g\(.*kind::DataType"
 
 ## Limitations
 
-- **Only types are recorded, not values.** A test calling `g(10; kind = Foo)` is checked
+- **Only types are recorded.** A test calling `g(10; kind = Foo)` is checked
   as `g(::Int64; kind::DataType)`, which often fails to trim even though a caller writing
   `kind = Foo` compiles fine. These reports are tagged `[value-dependent]`.
 - **Some calls are missed.** A call made from inside a compiled test helper can be
-  compiled into the helper without being logged.
+  compiled into the helper without being logged. [`uncovered`](@ref) lists the public
+  names no recorded call reaches.
 - **Varargs** are checked as a call with a single argument of the recorded type.
 
 See [Tested packages](90-tested-packages.md) for TrimTrace run on real packages, and the

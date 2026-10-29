@@ -1,0 +1,39 @@
+name: TrimTrace
+
+on:
+  push:
+    branches:
+      - main
+    tags: ["*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+jobs:
+  trimtrace:
+    name: Public API under --trim=safe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: "1"
+      - uses: julia-actions/cache@v3
+      - name: Install TrimTrace
+        run: julia --project=@trimtrace -e 'using Pkg; Pkg.add(url = "https://github.com/BjarkeHautop/TrimTrace.jl")'
+      - name: Instantiate the test environment
+        run: julia --project=test -e 'using Pkg; Pkg.instantiate()'
+      - name: Record the tests and check the calls with --trim=safe
+        env:
+          # TrimTrace is loaded from its own environment, stacked on the test one.
+          JULIA_LOAD_PATH: "@:@trimtrace:@stdlib"
+        run: |
+          julia --project=test -e '
+            using TrimTrace, TrimTrace
+            allow = isfile("test/trim-allow.txt") ? "test/trim-allow.txt" : String[]
+            result = record_and_check(TrimTrace; allow)
+            display(result)
+            passed(result) || exit(1)'

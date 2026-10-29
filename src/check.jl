@@ -32,6 +32,8 @@ The outcome of [`check`](@ref).
   - `errors`: the verifier reports not covered by the allowlist.
   - `allowed`: the verifier reports covered by the allowlist.
   - `stale`: allowlist entries that matched no report, which can be removed.
+  - `signatures`: the signatures that were checked, also written to `signatures.txt` next
+    to the log.
   - `log`: the path of the full juliac output.
 
 Use [`passed`](@ref) to decide the outcome.
@@ -41,6 +43,7 @@ struct TrimCheckResult
     errors::Vector{TrimError}
     allowed::Vector{TrimError}
     stale::Vector{Union{String,Regex}}
+    signatures::Vector{Expr}
     log::String
 end
 
@@ -59,7 +62,7 @@ failed only because of allowed reports.
 # Examples
 ```jldoctest
 julia> result = TrimTrace.TrimCheckResult(
-           true, TrimTrace.TrimError[], TrimTrace.TrimError[], String[], "juliac.log");
+           true, TrimTrace.TrimError[], TrimTrace.TrimError[], String[], Expr[], "juliac.log");
 
 julia> passed(result)
 true
@@ -88,8 +91,9 @@ Compile the signatures `sigs` with `juliac --trim=safe` and parse the verifier o
 - `project = nothing`: the project juliac compiles in. With `nothing`, a project holding
   only `pkg` and the packages the signatures reference is generated in `workdir`, which
   keeps juliac from instantiating unrelated test dependencies.
-- `workdir = mktempdir()`: the directory for the entry file, the generated project and
-  `juliac.log`.
+- `workdir = mktempdir()`: the directory for the entry file, the generated project,
+  `juliac.log` and `signatures.txt` (the checked signatures, as written by
+  [`write_signatures`](@ref)). It is created if missing.
 - `julia_args = String[]`: arguments passed to the Julia process that compiles the image.
 
 # Returns
@@ -105,7 +109,7 @@ Allowed signatures are still compiled, so allowlist entries that stop matching s
 `stale`.
 
 # Examples
-```jldoctest; filter = r"Full juliac output: .*"
+```jldoctest; filter = [r"listed in .*", r"Full juliac output: .*"]
 julia> using TrimFixture  # the demo package in test/fixtures
 
 julia> sigs = record(TrimFixture; project = pkgdir(TrimFixture));
@@ -113,6 +117,7 @@ julia> sigs = record(TrimFixture; project = pkgdir(TrimFixture));
 julia> check(TrimFixture, sigs; project = pkgdir(TrimFixture))
 TrimTrace check failed: 1 errors (0 value-dependent), 0 warnings, 0 allowed
   1 x TrimFixture.unstable(::Int64)
+Signatures checked: 6 (listed in /tmp/jl_JzYP0W/signatures.txt)
 Full juliac output: /tmp/jl_JzYP0W/juliac.log
 
 julia> allow = ["TrimFixture.unstable(::Int64)"];
@@ -133,6 +138,8 @@ function check(
     # An empty entry file compiles, which would pass a check that tested nothing.
     isempty(sigs) && throw(ArgumentError("no signatures to check"))
     allow = allow isa AbstractString ? _read_allowlist(allow) : collect(allow)
+    mkpath(workdir)
+    write_signatures(joinpath(workdir, "signatures.txt"), sigs)
     entry = entry_file(joinpath(workdir, "entry.jl"), pkg, sigs)
     project = project === nothing ? _write_project(workdir, pkg, sigs) : abspath(project)
     log = joinpath(workdir, "juliac.log")
@@ -164,6 +171,7 @@ function check(
         filter(!is_allowed, reports),
         filter(is_allowed, reports),
         stale,
+        collect(Expr, sigs),
         log,
     )
 end
@@ -358,10 +366,12 @@ function _write_project(workdir, pkg, sigs)
     open(joinpath(dir, "Project.toml"), "w") do io
         println(io, "[deps]")
         for root in _import_roots(pkg, sigs)
-            # A signature can name a dependency of `pkg` that the active environment lacks.
+            # A signature can name a dependency of `pkg` that the active environment lacks,
+            # or a test dependency that `record` loaded from the test environment.
             pkgid = @something(
                 Base.identify_package(String(root)),
                 Base.identify_package(Base.PkgId(pkg), String(root)),
+                _loaded_pkgid(root),
                 Some(nothing),
             )
             pkgid === nothing &&
@@ -376,6 +386,13 @@ function _write_project(workdir, pkg, sigs)
         end
     end
     return dir
+end
+
+function _loaded_pkgid(root::Symbol)
+    for pkgid in keys(Base.loaded_modules)
+        pkgid.name == String(root) && pkgid.uuid !== nothing && return pkgid
+    end
+    return nothing
 end
 
 const REPORT_HEADER = r"^(Error|Warning) #\d+: "
@@ -475,6 +492,8 @@ function Base.show(io::IO, ::MIME"text/plain", result::TrimCheckResult)
         println(io, "Allowlist entries matching no report (can be removed):")
         foreach(p -> println(io, "  ", p), result.stale)
     end
+    sigs_file = joinpath(dirname(result.log), "signatures.txt")
+    println(io, "Signatures checked: $(length(result.signatures)) (listed in $sigs_file)")
     print(io, "Full juliac output: ", result.log)
 end
 

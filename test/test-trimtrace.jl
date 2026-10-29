@@ -206,6 +206,18 @@ end
     @test_throws ArgumentError check(TrimFixture, Expr[])
 end
 
+@testitem "write_ci_workflow" tags = [:unit] setup = [Fixture] begin
+    path = write_ci_workflow(Fixture.DIR; path = tempname() * ".yml", julia = "1.13")
+    yml = read(path, String)
+    @test occursin("version: \"1.13\"", yml)
+    @test occursin("using TrimTrace, TrimFixture", yml)
+    @test occursin("record_and_check(TrimFixture; allow)", yml)
+    @test occursin("\${{ github.workflow }}", yml)
+    @test occursin("Pkg.develop(path = \".\")", yml)
+    # The fixture has no test/Project.toml, so `record` generates its test project.
+    @test !occursin("--project=test", yml)
+end
+
 @testitem "legacy test project includes the package dependencies" tags = [:unit] begin
     using TOML
     pkg = mktempdir()
@@ -273,4 +285,17 @@ end
     @test result.compiled
     @test passed(result)
     @test isempty(result.errors) && isempty(result.allowed)
+
+    workdir = mktempdir()
+    result = record_and_check(
+        TrimFixture;
+        allow = ["TrimFixture.unstable(::Int64)"],
+        workdir,
+        test_project = Fixture.DIR,
+        test_file = joinpath(Fixture.DIR, "test", "runtests.jl"),
+    )
+    @test passed(result)
+    @test read_signatures(joinpath(workdir, "signatures.txt")) == result.signatures
+    @test isfile(joinpath(workdir, "entry.jl"))
+    @test occursin("Signatures checked: 6", sprint(show, MIME"text/plain"(), result))
 end
