@@ -55,6 +55,8 @@ compiles, with or without an explicit RNG. The package's own
 [TrimCheck workflow](https://github.com/BjarkeHautop/CausalStructures.jl/blob/main/.github/workflows/TrimCheck.yml)
 compiles both forms and passes.
 
+Suggested `test/trim-allow.txt`:
+
 ```text
 # class is a literal type in real calls; only the recorded DataType fails.
 r"^CausalStructures\.generate_graph\(.*class::DataType"

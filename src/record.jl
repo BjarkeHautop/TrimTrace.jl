@@ -2,22 +2,50 @@
     record(pkg::Module; project, test_file, exclude = Symbol[], abstract_params = false,
            julia_args = String[]) -> Vector{Expr}
 
-Run `test_file` in a fresh Julia process with `--trace-compile` and `--trace-dispatch` and
-return the recorded public signatures of `pkg`, as [`extract_signatures`](@ref) does with
-`exclude` and `abstract_params`.
+Run the test suite of `pkg` with tracing on and return the public signatures it called.
 
-`project` defaults to the package's `test` directory and `test_file` to
-`test/runtests.jl`. A package that declares its test dependencies with `[extras]` and
-`[targets]` instead of a `test/Project.toml` gets a generated test project holding the
-package, its dependencies and those test dependencies. `julia_args` are passed to the child process before the
-test file. Failing tests only produce a warning, since the calls they made are still
-valid signatures.
+The test file runs in a fresh Julia process with `--trace-compile` and `--trace-dispatch`,
+and the traces are filtered as [`extract_signatures`](@ref) does.
+
+# Arguments
+- `pkg::Module`: the package under test.
+
+# Keywords
+- `project`: the test environment. Defaults to the package's `test` directory. A package
+  that declares its test dependencies with `[extras]` and `[targets]` instead of a
+  `test/Project.toml` gets a generated test project holding the package, its
+  dependencies and those test dependencies.
+- `test_file`: the file to run, by default `test/runtests.jl`.
+- `exclude = Symbol[]`: passed to [`extract_signatures`](@ref).
+- `abstract_params = false`: passed to [`extract_signatures`](@ref).
+- `julia_args = String[]`: arguments passed to the child process before the test file.
+
+# Returns
+The recorded signatures, sorted and deduplicated.
+
+# Notes
+Failing tests only produce a warning, since the calls they made are still valid
+signatures.
 
 `--trace-compile` alone misses a call whose specialization was already compiled as the
 callee of an earlier call; `--trace-dispatch` still logs it as long as the test makes the
 call dynamically, as top-level test code does. A call made from inside a compiled test
 helper function with inferable argument types is not dispatched dynamically and can be
 missed.
+
+# Examples
+```jldoctest
+julia> using TrimFixture  # the demo package in test/fixtures
+
+julia> record(TrimFixture; project = pkgdir(TrimFixture))
+6-element Vector{Expr}:
+ :(Tuple{TrimFixture.Scaler, Int64})
+ :(Tuple{Type{TrimFixture.Box}, Int64})
+ :(Tuple{Type{TrimFixture.Scaler}, Int64})
+ :(Tuple{typeof(Core.kwcall), NamedTuple{(:factor,), Tuple{Int64}}, typeof(TrimFixture.scaled), Int64})
+ :(Tuple{typeof(TrimFixture.stable), TrimFixture.Box})
+ :(Tuple{typeof(TrimFixture.unstable), Int64})
+```
 """
 function record(
     pkg::Module;

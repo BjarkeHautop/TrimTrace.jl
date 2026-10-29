@@ -5,8 +5,10 @@ One error or warning reported by the trim verifier.
 
   - `kind`: `:error` or `:warning`.
   - `message`: the verifier's description, including the unresolved statement.
-  - `entry`: the outermost stack frame, which is the entry point (recorded signature) the
-    problem was reached from.
+  - `entry`: the signature the problem was reached from. [`parse_juliac_log`](@ref) sets
+    it to the generated `entry_<i>` wrapper frame, which [`check`](@ref) replaces with the
+    signature as the report prints it, such as `MyPkg.f(::Int64; k::Symbol)`. Without a
+    stack trace it is the callee of the unresolved statement.
   - `value_dependent`: `true` when the unresolved statement involves a value used as a type
     (`::DataType`, `Val(x)`, `Type{T} where T`). Such calls usually resolve when the
     argument is a compile-time constant, which a recorded signature cannot express. In a
@@ -45,8 +47,23 @@ end
 """
     passed(result::TrimCheckResult) -> Bool
 
+Decide whether a [`check`](@ref) succeeded.
+
+# Arguments
+- `result::TrimCheckResult`: the outcome of [`check`](@ref).
+
+# Returns
 `true` when every verifier report is allowed and juliac either compiled the entry file or
 failed only because of allowed reports.
+
+# Examples
+```jldoctest
+julia> result = TrimTrace.TrimCheckResult(
+           true, TrimTrace.TrimError[], TrimTrace.TrimError[], String[], "juliac.log");
+
+julia> passed(result)
+true
+```
 """
 passed(result::TrimCheckResult) =
     isempty(result.errors) && (result.compiled || !isempty(result.allowed))
@@ -55,18 +72,54 @@ passed(result::TrimCheckResult) =
     check(pkg::Module, sigs; allow = [], project = nothing, workdir = mktempdir(),
           julia_args = String[]) -> TrimCheckResult
 
-Compile the signatures `sigs` (or the file written by [`write_signatures`](@ref), when
-`sigs` is a path) with `juliac --trim=safe` and parse the verifier output.
+Compile the signatures `sigs` with `juliac --trim=safe` and parse the verifier output.
 
-`allow` lists known failures: each entry is a `String` equal to a signature as the report
-prints it (for example `"MyPkg.f(::Int64; k::Symbol)"`) or a `Regex` matched against it.
-It can also be the path of a file with one entry per line (`#` starts a comment), where a
-line written as `r"..."` is a `Regex`, as in `r"^MyPkg\\.g\\(.*kind::DataType"`.
-Allowed signatures are still compiled, so entries that stop matching show up as `stale`.
+# Arguments
+- `pkg::Module`: the package whose signatures are checked.
+- `sigs`: the signatures as `Tuple{...}` expressions, or the path of a file written by
+  [`write_signatures`](@ref).
 
-With `project = nothing`, a project holding only `pkg` and the packages the signatures
-reference is generated in `workdir`, which keeps juliac from instantiating unrelated test
-dependencies. `julia_args` are passed to the Julia process that compiles the image.
+# Keywords
+- `allow = []`: known failures. Each entry is a `String` equal to a signature as the
+  report prints it (for example `"MyPkg.f(::Int64; k::Symbol)"`) or a `Regex` matched
+  against it. It can also be the path of a file with one entry per line (`#` starts a
+  comment), where a line written as `r"..."` is a `Regex`, as in
+  `r"^MyPkg\\.g\\(.*kind::DataType"`.
+- `project = nothing`: the project juliac compiles in. With `nothing`, a project holding
+  only `pkg` and the packages the signatures reference is generated in `workdir`, which
+  keeps juliac from instantiating unrelated test dependencies.
+- `workdir = mktempdir()`: the directory for the entry file, the generated project and
+  `juliac.log`.
+- `julia_args = String[]`: arguments passed to the Julia process that compiles the image.
+
+# Returns
+A [`TrimCheckResult`](@ref TrimTrace.TrimCheckResult); use [`passed`](@ref) to decide
+the outcome.
+
+# Throws
+- `ArgumentError`: `sigs` is empty, since an empty entry file compiles and would pass a
+  check that tested nothing.
+
+# Notes
+Allowed signatures are still compiled, so allowlist entries that stop matching show up as
+`stale`.
+
+# Examples
+```jldoctest; filter = r"Full juliac output: .*"
+julia> using TrimFixture  # the demo package in test/fixtures
+
+julia> sigs = record(TrimFixture; project = pkgdir(TrimFixture));
+
+julia> check(TrimFixture, sigs; project = pkgdir(TrimFixture))
+TrimTrace check failed: 1 errors (0 value-dependent), 0 warnings, 0 allowed
+  1 x TrimFixture.unstable(::Int64)
+Full juliac output: /tmp/jl_JzYP0W/juliac.log
+
+julia> allow = ["TrimFixture.unstable(::Int64)"];
+
+julia> passed(check(TrimFixture, sigs; allow, project = pkgdir(TrimFixture)))
+true
+```
 """
 function check(
     pkg::Module,
@@ -196,15 +249,44 @@ function _signature_string(sig::Expr)
 end
 
 """
-    entry_file(path, pkg::Module, sigs) -> path
+    entry_file(path, pkg::Module, sigs) -> String
 
-Write a juliac entry file to `path` that imports `pkg` and every package `sigs` reference.
-Each signature gets a wrapper function with concretely typed arguments that makes the
-call, and the wrapper is marked as a trim entry point with `Base.Experimental.entrypoint`.
+Write a juliac entry file that marks every signature in `sigs` as a trim entry point.
 
+The file imports `pkg` and every package `sigs` reference. Each signature gets a wrapper
+function with concretely typed arguments that makes the call, and the wrapper is marked
+as a trim entry point with `Base.Experimental.entrypoint`.
+
+# Arguments
+- `path`: the file to write.
+- `pkg::Module`: the package the signatures call into.
+- `sigs`: the signatures as `Tuple{...}` expressions.
+
+# Returns
+`path`.
+
+# Notes
 Marking the signature itself would let the compiler widen calls to vararg methods to the
 generic `Vararg` specialization, which an ordinary call site with a fixed number of
 arguments does not use.
+
+# Examples
+```jldoctest
+julia> path = entry_file(tempname(), TrimTrace, [:(Tuple{typeof(TrimTrace.passed), Int64})]);
+
+julia> print(read(path, String))
+module TrimTraceEntry
+
+import TrimTrace
+
+# Tuple{typeof(TrimTrace.passed), Int64}
+function entry_1(a1::Int64)
+    return TrimTrace.passed(a1)
+end
+Base.Experimental.entrypoint(entry_1, (Int64,))
+
+end
+```
 """
 function entry_file(path::AbstractString, pkg::Module, sigs)
     open(path, "w") do io
@@ -302,6 +384,33 @@ const REPORT_HEADER = r"^(Error|Warning) #\d+: "
     parse_juliac_log(path) -> Vector{TrimError}
 
 Parse the trim verifier reports out of a juliac log.
+
+# Arguments
+- `path`: the juliac log, as written by [`check`](@ref).
+
+# Returns
+One [`TrimError`](@ref TrimTrace.TrimError) per report, in log order. Its `entry` is the
+generated `entry_<i>` wrapper frame, not yet mapped back to a signature.
+
+# Examples
+```jldoctest
+julia> log = tempname();
+
+julia> write(log, join([
+           "Error #1: unresolved call from statement string(",
+           "  (…)::Any",
+           ")::String",
+           "",
+           "Stacktrace:",
+           " [1] unstable(i::Int64)",
+           " [2] entry_4(a1::Int64)",
+           "",
+           "Trim verify finished with 1 errors, 0 warnings.",
+       ], '\\n'));
+
+julia> only(TrimTrace.parse_juliac_log(log)).entry
+"entry_4(a1::Int64)"
+```
 """
 function parse_juliac_log(path::AbstractString)
     lines = readlines(path)

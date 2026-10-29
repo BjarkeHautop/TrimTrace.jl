@@ -15,9 +15,22 @@ TrimTrace runs your tests with `--trace-compile` and `--trace-dispatch`, keeps t
 signatures of calls into the package's public names (including keyword and constructor
 calls, and calls to objects of its public types), and compiles them as trim entry points with
 [JuliaC](https://github.com/JuliaLang/JuliaC.jl). Each verifier error is reported against
-the signature it was reached from. Requires Julia 1.12+.
+the signature it was reached from.
+
+## Installation
+
+TrimTrace needs Julia 1.12 or later.
+
+```julia
+using Pkg
+Pkg.add(url = "https://github.com/BjarkeHautop/TrimTrace.jl")
+```
 
 ## Usage
+
+There are two steps. First, record the signatures your tests call and commit them as a
+text file next to the tests. Then check that file, typically in CI, and record again
+whenever the tests change.
 
 ```julia
 using TrimTrace, MyPackage
@@ -33,6 +46,11 @@ display(result)
 passed(result) || exit(1)
 ```
 
+`record` runs `test/runtests.jl` in a fresh Julia process and returns the concrete
+signatures it saw. `uncovered` lists the public names that no recorded call reaches, so
+you can see what the check misses. `check` compiles every signature as a trim entry point
+and returns the verifier reports, grouped by the signature they were reached from. An example output:
+
 ```text
 TrimTrace check failed: 2 errors (1 value-dependent), 0 warnings, 0 allowed
   1 x MyPackage.f(::Float64)
@@ -42,7 +60,7 @@ Full juliac output: /tmp/jl_.../juliac.log
 
 The allowlist holds known failures, one signature per line as the report prints it, or a
 pattern written as `r"..."` that covers several signatures at once (or pass a vector of
-strings and `Regex`es). Entries that no longer match are reported as stale.
+strings and `Regex`es):
 
 ```text
 # test/trim-allow.txt
@@ -64,6 +82,13 @@ r"^MyPackage\.g\(.*kind::DataType"
   missing argument types for names that were.
 - **Varargs.** A call to `f(xs...)` recorded as "any number of `Int64`s" is checked as a
   call with a single `Int64`.
+
+## Documentation
+
+The [documentation](https://BjarkeHautop.github.io/TrimTrace.jl/dev) walks through each
+step, lists every function and keyword, and shows
+[TrimTrace run on real packages](https://BjarkeHautop.github.io/TrimTrace.jl/dev/90-tested-packages/)
+with what it found.
 
 ## Related
 

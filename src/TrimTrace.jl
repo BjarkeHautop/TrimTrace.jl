@@ -6,10 +6,11 @@ checks that they compile under `juliac --trim=safe`.
 
 The workflow is:
 
- 1. [`record`](@ref) runs the test suite under `--trace-compile` and keeps the signatures
-    of calls into public names of the package (positional, keyword, and constructor calls).
+ 1. [`record`](@ref) runs the test suite under `--trace-compile` and `--trace-dispatch`
+    and keeps the signatures of calls into public names of the package (positional,
+    keyword and constructor calls, and calls to objects of its public types).
  2. [`write_signatures`](@ref) stores them as a sorted text file to commit next to the
-    tests.
+    tests, and [`uncovered`](@ref) lists the public names no recorded call reaches.
  3. [`check`](@ref) marks every stored signature as a trim entry point, compiles them with
     JuliaC, and reports the verifier errors per signature.
 """

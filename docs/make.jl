@@ -1,16 +1,35 @@
 using TrimTrace
 using Documenter
+using DocumenterCodeBlocks
+using DocumenterDocstringStyle
 
-DocMeta.setdocmeta!(TrimTrace, :DocTestSetup, :(using TrimTrace); recursive = true)
+const _repo_url = "https://github.com/BjarkeHautop/TrimTrace.jl"
+
+# The `record` and `check` examples use the demo package in test/fixtures.
+const _fixture_dir = joinpath(dirname(@__DIR__), "test", "fixtures", "TrimFixture")
+
+DocMeta.setdocmeta!(
+    TrimTrace,
+    :DocTestSetup,
+    :(using TrimTrace; $_fixture_dir in LOAD_PATH || push!(LOAD_PATH, $_fixture_dir));
+    recursive = true,
+)
 
 # Add titles of sections and overrides page titles
-const titles = Dict(
-    # "10-tutorials" => "Tutorials", # example folder title
-    "91-developer.md" => "Developer docs",
-)
+const titles =
+    Dict("90-tested-packages.md" => "Tested Packages", "95-reference.md" => "Reference")
 
 function recursively_list_pages(folder; path_prefix = "")
     pages_list = Any[]
+
+    # A subfolder's own index.md (if any) becomes its overview page, listed
+    # first within that subfolder. The root index.md is handled separately by
+    # `list_pages`, so skip this for the top-level call (empty path_prefix).
+    if path_prefix != "" && isfile(joinpath(folder, "index.md"))
+        folder_title = get(titles, path_prefix, path_prefix)
+        push!(pages_list, "$folder_title overview" => joinpath(path_prefix, "index.md"))
+    end
+
     for file in readdir(folder)
         if file == "index.md"
             # We add index.md separately to make sure it is the first in the list
@@ -61,10 +80,33 @@ end
 makedocs(;
     modules = [TrimTrace],
     authors = "Bjarke Hautop Kristensen <bjarke.hautop@gmail.com>",
-    repo = "https://github.com/BjarkeHautop/TrimTrace.jl/blob/{commit}{path}#{line}",
+    repo = "$_repo_url/blob/{commit}{path}#{line}",
     sitename = "TrimTrace.jl",
-    format = Documenter.HTML(; canonical = "https://BjarkeHautop.github.io/TrimTrace.jl"),
+    format = Documenter.HTML(;
+        canonical = "https://BjarkeHautop.github.io/TrimTrace.jl",
+        repolink = _repo_url,
+    ),
     pages = list_pages(),
+    plugins = [
+        CodeBlocks(line_numbers = false),
+        SchemaConfig(
+            order = [
+                "Arguments",
+                "Keywords",
+                "Returns",
+                "Attributes",
+                "Throws",
+                "Notes",
+                "Examples",
+                "See also",
+                "References",
+                "Extended help",
+            ],
+            theme = :rustdoc,
+            strict = true,
+            skip_unexported = true,
+        ),
+    ],
 )
 
 deploydocs(; repo = "github.com/BjarkeHautop/TrimTrace.jl")

@@ -1,24 +1,48 @@
 """
-    extract_signatures(pkg::Module, traces; exclude = Symbol[]) -> Vector{Expr}
+    extract_signatures(pkg::Module, traces; exclude = Symbol[], abstract_params = false)
+        -> Vector{Expr}
 
-Parse `--trace-compile` or `--trace-dispatch` output files (a path or a vector of paths)
-and return the recorded signatures, as
-`Tuple{...}` expressions, whose callee is a public name of `pkg`. That covers positional
-calls `Tuple{typeof(f), A}`, keyword calls `Tuple{typeof(Core.kwcall), NamedTuple{...},
-typeof(f), A}`, constructor calls `Tuple{Type{T}, A}` and calls to an object of a public
-type `Tuple{T{P}, A}`.
+Parse `--trace-compile` or `--trace-dispatch` output and return the public calls into `pkg`.
 
-A signature is dropped when it cannot be evaluated outside the recording process (for
-example types defined in the test files), has a non-concrete argument type, or calls a
-name listed in `exclude`. Unless `abstract_params = true`, it is also dropped when an
-argument type has an abstract type parameter, as in `Vector{Any}` or `Vector{NamedTuple}`:
-such containers come from tests passing mixed values and dispatch dynamically on their
-elements, which a trimmed caller would avoid. A trailing `Vararg{A}` is replaced by a
-single `A`. The result is sorted and deduplicated.
+The signatures are `Tuple{...}` expressions whose callee is a public name of `pkg`. That
+covers positional calls `Tuple{typeof(f), A}`, keyword calls
+`Tuple{typeof(Core.kwcall), NamedTuple{...}, typeof(f), A}`, constructor calls
+`Tuple{Type{T}, A}` and calls to an object of a public type `Tuple{T{P}, A}`.
+
+# Arguments
+- `pkg::Module`: the package whose public calls are kept.
+- `traces`: a trace file path or a vector of paths.
+
+# Keywords
+- `exclude = Symbol[]`: names whose calls are dropped.
+- `abstract_params = false`: keep signatures whose argument types have an abstract type
+  parameter, as in `Vector{Any}` or `Vector{NamedTuple}`. Such containers come from tests
+  passing mixed values and dispatch dynamically on their elements, which a trimmed caller
+  would avoid.
+
+# Returns
+The signatures, sorted and deduplicated.
+
+# Notes
+A signature is also dropped when it cannot be evaluated outside the recording process
+(for example types defined in the test files) or has a non-concrete argument type. A
+trailing `Vararg{A}` is replaced by a single `A`.
+
+# Examples
+```jldoctest
+julia> trace = tempname();
+
+julia> write(trace, join([
+           "precompile(Tuple{typeof(TrimTrace.read_signatures), String})",
+           "precompile(Tuple{typeof(TrimTrace._read_lines), String})",
+           "precompile(Tuple{typeof(TrimTrace.uncovered), Module, Vector{Any}})",
+       ], '\\n'));
+
+julia> extract_signatures(TrimTrace, trace)
+1-element Vector{Expr}:
+ :(Tuple{typeof(TrimTrace.read_signatures), String})
+```
 """
-extract_signatures(pkg::Module, trace::AbstractString; kwargs...) =
-    extract_signatures(pkg, [trace]; kwargs...)
-
 function extract_signatures(
     pkg::Module,
     traces::AbstractVector{<:AbstractString};
@@ -42,6 +66,9 @@ function extract_signatures(
     end
     return sort!(collect(sigs); by = string)
 end
+
+extract_signatures(pkg::Module, trace::AbstractString; kwargs...) =
+    extract_signatures(pkg, [trace]; kwargs...)
 
 # Every loaded package is bound by name so the fully qualified names in the trace resolve,
 # while `Main` is left out so types defined by the test files fail to evaluate.
