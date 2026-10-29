@@ -13,7 +13,7 @@ your test suite already makes instead of writing them by hand.
 
 TrimTrace runs your tests with `--trace-compile` and `--trace-dispatch`, keeps the concrete
 signatures of calls into the package's public names (including keyword and constructor
-calls), and compiles them as trim entry points with
+calls, and calls to objects of its public types), and compiles them as trim entry points with
 [JuliaC](https://github.com/JuliaLang/JuliaC.jl). Each verifier error is reported against
 the signature it was reached from. Requires Julia 1.12+.
 
@@ -40,9 +40,15 @@ TrimTrace check failed: 2 errors (1 value-dependent), 0 warnings, 0 allowed
 Full juliac output: /tmp/jl_.../juliac.log
 ```
 
-The allowlist holds known failures, one signature per line as the report prints it (or
-pass a vector of strings and `Regex`es). Entries that no longer match are reported as
-stale.
+The allowlist holds known failures, one signature per line as the report prints it, or a
+pattern written as `r"..."` that covers several signatures at once (or pass a vector of
+strings and `Regex`es). Entries that no longer match are reported as stale.
+
+```text
+# test/trim-allow.txt
+MyPackage.f(::Float64)
+r"^MyPackage\.g\(.*kind::DataType"
+```
 
 ## Limitations
 

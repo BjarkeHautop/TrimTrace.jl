@@ -9,7 +9,7 @@ return the recorded public signatures of `pkg`, as [`extract_signatures`](@ref) 
 `project` defaults to the package's `test` directory and `test_file` to
 `test/runtests.jl`. A package that declares its test dependencies with `[extras]` and
 `[targets]` instead of a `test/Project.toml` gets a generated test project holding the
-package and those dependencies. `julia_args` are passed to the child process before the
+package, its dependencies and those test dependencies. `julia_args` are passed to the child process before the
 test file. Failing tests only produce a warning, since the calls they made are still
 valid signatures.
 
@@ -34,15 +34,22 @@ function record(
         julia = Base.julia_cmd()
         trace_args = ["--trace-compile=$(traces[1])", "--trace-dispatch=$(traces[2])"]
         cmd = `$julia --project=$project $trace_args $julia_args $test_file`
-        proc = run(ignorestatus(Cmd(cmd; dir = dirname(test_file))))
+        proc = run(ignorestatus(Cmd(_clean_env(cmd); dir = dirname(test_file))))
         if !success(proc)
             @warn "The tests exited with code $(proc.exitcode); keeping the calls they made"
         end
-        return extract_signatures(pkg, filter(isfile, traces); exclude, abstract_params)
+        sigs = extract_signatures(pkg, filter(isfile, traces); exclude, abstract_params)
+        isempty(sigs) && @warn "No public calls of $pkg were recorded"
+        return sigs
     finally
         foreach(trace -> rm(trace; force = true), traces)
     end
 end
+
+# Drops the load path and project inherited from the calling process, as set by `Pkg.test`,
+# so the child process sees only its `--project` and the standard library.
+_clean_env(cmd) =
+    setenv(cmd, filter(p -> p.first ∉ ("JULIA_LOAD_PATH", "JULIA_PROJECT"), ENV))
 
 function _default_test_project(pkg::Module)
     test_dir = joinpath(pkgdir(pkg), "test")
@@ -57,7 +64,9 @@ function _legacy_test_project(pkg_path::AbstractString)
     extras = get(toml, "extras", Dict{String,Any}())
     targets = get(get(toml, "targets", Dict{String,Any}()), "test", String[])
     compat = get(toml, "compat", Dict{String,Any}())
-    deps = Dict{String,Any}(toml["name"] => toml["uuid"])
+    # `Pkg.test` lets the tests load the package's own dependencies as well.
+    deps = Dict{String,Any}(get(toml, "deps", Dict{String,Any}()))
+    deps[toml["name"]] = toml["uuid"]
     for name in targets
         deps[name] = extras[name]
     end
@@ -68,6 +77,6 @@ function _legacy_test_project(pkg_path::AbstractString)
     )
     dir = mktempdir()
     open(io -> TOML.print(io, project), joinpath(dir, "Project.toml"), "w")
-    run(`$(Base.julia_cmd()) --project=$dir -e "using Pkg; Pkg.instantiate()"`)
+    run(_clean_env(`$(Base.julia_cmd()) --project=$dir -e "using Pkg; Pkg.instantiate()"`))
     return dir
 end

@@ -1,7 +1,7 @@
 # A package with one trim-safe and one trim-unsafe public function, for TrimTrace's tests.
 module TrimFixture
 
-export Box, stable, unstable, scaled, uncalled
+export Box, Scaler, stable, unstable, scaled, uncalled
 
 struct Box
     x::Int
@@ -15,6 +15,12 @@ const REGISTRY = Any[1, "one"]
 unstable(i::Int) = string(REGISTRY[i])
 
 scaled(x::Int; factor::Int = 2) = x * factor
+
+struct Scaler
+    factor::Int
+end
+
+(s::Scaler)(x::Int) = s.factor * x
 
 uncalled(x::Int) = x
 

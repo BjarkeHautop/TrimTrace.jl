@@ -60,12 +60,30 @@ end
 
 # The unqualified callee name of a `Tuple{...}` signature expression.
 function _signature_callee(sig::Expr)
-    params = sig.args[2:end]
-    ft = params[1] == :(typeof(Core.kwcall)) ? params[3] : params[1]
-    target = ft.args[end]
-    # `Type{M.T{P} where P}` names the constructor `T`.
-    while Meta.isexpr(target, :where) || Meta.isexpr(target, :curly)
-        target = target.args[1]
-    end
+    _, callee, _ = _split_signature(sig)
+    target = _strip_params(_is_object_callee(callee) ? callee : callee.args[end])
     return Meta.isexpr(target, :.) ? target.args[2].value : target
 end
+
+# `M.T{P}` and `M.T{P} where P` become `M.T`.
+function _strip_params(ex)
+    while Meta.isexpr(ex, :where) || Meta.isexpr(ex, :curly)
+        ex = ex.args[1]
+    end
+    return ex
+end
+
+# Splits a signature into whether it is a keyword call, the callee parameter (`typeof(f)`,
+# `Type{T}`, or the type of a called object) and the argument types, which start with the
+# keyword `NamedTuple` for a keyword call.
+function _split_signature(sig::Expr)
+    params = sig.args[2:end]
+    is_kwcall = params[1] == :(typeof(Core.kwcall))
+    callee = is_kwcall ? params[3] : params[1]
+    argtypes = is_kwcall ? [params[2]; params[4:end]] : params[2:end]
+    return is_kwcall, callee, argtypes
+end
+
+_is_object_callee(callee) =
+    !(Meta.isexpr(callee, :call) && callee.args[1] === :typeof) &&
+    !(Meta.isexpr(callee, :curly) && callee.args[1] === :Type)

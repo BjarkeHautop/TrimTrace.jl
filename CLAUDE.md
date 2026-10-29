@@ -40,13 +40,14 @@ The pipeline is record → store → check; each stage is one file in `src/`.
   signatures. Each line is evaluated in a sandbox module that binds every loaded package
   by name but *not* `Main`, so types defined in test files fail to resolve and are dropped.
   It keeps only calls whose callee is a public name of the package (`typeof(f)`,
-  `Type{T}` constructors, or `Core.kwcall` keyword calls), drops abstract argument types
+  `Type{T}` constructors, an object of a public type, or `Core.kwcall` keyword calls), drops abstract argument types
   and (unless `abstract_params`) abstract type parameters, and expands a trailing
   `Vararg{A}` to a single `A`. Signatures are kept as `Expr`, not types, throughout.
 - **`record.jl`** runs the target package's test file in a child Julia process with both
   `--trace-compile` and `--trace-dispatch`, then feeds both traces to `extract_signatures`.
   Packages with legacy `[extras]`/`[targets]` test deps get a generated, instantiated temp
-  test project.
+  test project (package deps plus test extras). Child processes drop inherited
+  `JULIA_LOAD_PATH`/`JULIA_PROJECT` so `record` works when called under `Pkg.test`.
 - **`signatures-file.jl`** reads/writes the sorted one-`Tuple{...}`-per-line file and
   implements `uncovered`.
 - **`check.jl`** does the compile and reporting:
@@ -59,7 +60,9 @@ The pipeline is record → store → check; each stage is one file in `src/`.
     `[sources]` path), avoiding test-only deps.
   - Only JuliaC's compile step runs (`--output-o`); output goes to `juliac.log`, which
     `parse_juliac_log` splits into `TrimError`s. `_relabel` maps `entry_<i>(` back to
-    signature `i`, rendered by `_signature_string` as `f(::A; k::K)`. Allowlist matching
+    signature `i`, rendered by `_signature_string` as `f(::A; k::K)` (or `(::T)(::A)` for
+    a called object). A report keeps its `value_dependent` tag only if the signature passes
+    a `DataType`/`Symbol`/`Type{T}`-like value. Allowlist matching
     and `stale` entries are computed on those rendered strings, so changing the rendering
     changes the allowlist format.
 

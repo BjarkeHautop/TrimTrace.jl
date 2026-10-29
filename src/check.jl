@@ -9,7 +9,10 @@ One error or warning reported by the trim verifier.
     problem was reached from.
   - `value_dependent`: `true` when the unresolved statement involves a value used as a type
     (`::DataType`, `Val(x)`, `Type{T} where T`). Such calls usually resolve when the
-    argument is a compile-time constant, which a recorded signature cannot express.
+    argument is a compile-time constant, which a recorded signature cannot express. In a
+    [`check`](@ref) result it is also required that the signature passes such a value
+    (a `DataType`, `Symbol`, `Type{T}`, ...), since otherwise the value comes from inside
+    the package and every caller hits the error.
 """
 struct TrimError
     kind::Symbol
@@ -57,7 +60,8 @@ Compile the signatures `sigs` (or the file written by [`write_signatures`](@ref)
 
 `allow` lists known failures: each entry is a `String` equal to a signature as the report
 prints it (for example `"MyPkg.f(::Int64; k::Symbol)"`) or a `Regex` matched against it.
-It can also be the path of a file with one such string per line (`#` starts a comment).
+It can also be the path of a file with one entry per line (`#` starts a comment), where a
+line written as `r"..."` is a `Regex`, as in `r"^MyPkg\\.g\\(.*kind::DataType"`.
 Allowed signatures are still compiled, so entries that stop matching show up as `stale`.
 
 With `project = nothing`, a project holding only `pkg` and the packages the signatures
@@ -73,7 +77,9 @@ function check(
     julia_args = String[],
 )
     sigs = sigs isa AbstractString ? read_signatures(sigs) : sigs
-    allow = allow isa AbstractString ? _read_lines(allow) : collect(allow)
+    # An empty entry file compiles, which would pass a check that tested nothing.
+    isempty(sigs) && throw(ArgumentError("no signatures to check"))
+    allow = allow isa AbstractString ? _read_allowlist(allow) : collect(allow)
     entry = entry_file(joinpath(workdir, "entry.jl"), pkg, sigs)
     project = project === nothing ? _write_project(workdir, pkg, sigs) : abspath(project)
     log = joinpath(workdir, "juliac.log")
@@ -109,35 +115,82 @@ function check(
     )
 end
 
+# A line written as `r"..."` is a `Regex`; any other line is an exact signature.
+function _read_allowlist(path::AbstractString)
+    return Union{String,Regex}[
+        length(line) >= 3 && startswith(line, "r\"") && endswith(line, '"') ?
+        Regex(line[3:(end-1)]) : String(line) for line in _read_lines(path)
+    ]
+end
+
 _matches(pattern::AbstractString, entry) = pattern == entry
 _matches(pattern::Regex, entry) = occursin(pattern, entry)
 
 # Reports reached through the generated `entry_<i>` wrapper are labelled with signature `i`.
+# A value-dependent report stays tagged only when the signature passes a value a caller
+# could write as a constant; otherwise every caller of that signature hits it.
 function _relabel(err::TrimError, sigs)
     m = match(r"^entry_(\d+)\(", err.entry)
     m === nothing && return err
-    entry = _signature_string(sigs[parse(Int, m[1])])
-    return TrimError(err.kind, err.message, entry, err.value_dependent)
+    sig = sigs[parse(Int, m[1])]
+    value_dependent = err.value_dependent && _passes_values(sig)
+    return TrimError(err.kind, err.message, _signature_string(sig), value_dependent)
+end
+
+# Types of the values a call is usually written with as constants (`Float32`, `:name`).
+const VALUE_TYPES = (:DataType, :UnionAll, :Union, :Symbol)
+
+function _passes_values(sig::Expr)
+    is_kwcall, _, argtypes = _split_signature(sig)
+    types = is_kwcall ? [last.(_kwarg_types(argtypes[1])); argtypes[2:end]] : argtypes
+    return any(types) do T
+        T = _normalize_type(T)
+        T in VALUE_TYPES || Meta.isexpr(T, :curly) && T.args[1] === :Type
+    end
+end
+
+# The trace writes the type `DataType` as `typeof(DataType)`, and likewise for the other
+# kinds of type.
+function _normalize_type(T)
+    Meta.isexpr(T, :call, 2) &&
+        T.args[1] === :typeof &&
+        T.args[2] in VALUE_TYPES &&
+        return T.args[2]
+    return T
+end
+
+# The `key => type` pairs of a keyword `NamedTuple{(:k,), Tuple{K}}`.
+function _kwarg_types(nt)
+    Meta.isexpr(nt, :curly) && length(nt.args) == 3 || return Pair{Any,Any}[]
+    keys = [k isa QuoteNode ? k.value : k for k in nt.args[2].args]
+    types_ex = nt.args[3]
+    # The trace writes a homogeneous `Tuple{T, T, T}` as `NTuple{3, T}`.
+    types = if types_ex.args[1] === :NTuple
+        fill(types_ex.args[3], types_ex.args[2])
+    else
+        types_ex.args[2:end]
+    end
+    return Pair{Any,Any}[k => T for (k, T) in zip(keys, types)]
 end
 
 # Renders `Tuple{typeof(Core.kwcall), NamedTuple{(:k,), Tuple{K}}, typeof(f), A}` as
-# `f(::A; k::K)`.
+# `f(::A; k::K)`, a constructor call as `T(::A)` and a call to an object as `(::T)(::A)`.
 function _signature_string(sig::Expr)
-    params = sig.args[2:end]
-    is_kwcall = params[1] == :(typeof(Core.kwcall))
-    callee = (is_kwcall ? params[3] : params[1]).args[end]
-    args = join(("::$T" for T in params[(is_kwcall ? 4 : 2):end]), ", ")
+    is_kwcall, callee_ex, argtypes = _split_signature(sig)
+    callee = if _is_object_callee(callee_ex)
+        "(::$callee_ex)"
+    elseif Meta.isexpr(callee_ex.args[end], :where)
+        # `Type{(M.T{P, Q} where Q) where P}` is the constructor `M.T`.
+        _strip_params(callee_ex.args[end])
+    else
+        callee_ex.args[end]
+    end
+    positional = is_kwcall ? argtypes[2:end] : argtypes
+    args = join(("::$(_normalize_type(T))" for T in positional), ", ")
     kwargs = ""
-    if is_kwcall && Meta.isexpr(params[2], :curly) && length(params[2].args) == 3
-        keys = [k isa QuoteNode ? k.value : k for k in params[2].args[2].args]
-        types_ex = params[2].args[3]
-        # The trace writes a homogeneous `Tuple{T, T, T}` as `NTuple{3, T}`.
-        types = if types_ex.args[1] === :NTuple
-            fill(types_ex.args[3], types_ex.args[2])
-        else
-            types_ex.args[2:end]
-        end
-        kwargs = "; " * join(("$k::$T" for (k, T) in zip(keys, types)), ", ")
+    if is_kwcall
+        pairs = _kwarg_types(argtypes[1])
+        kwargs = "; " * join(("$k::$(_normalize_type(T))" for (k, T) in pairs), ", ")
     end
     return "$callee($args$kwargs)"
 end
@@ -175,18 +228,19 @@ function entry_file(path::AbstractString, pkg::Module, sigs)
 end
 
 function _entry_wrapper(name, sig::Expr)
-    params = sig.args[2:end]
-    is_kwcall = params[1] == :(typeof(Core.kwcall))
-    callee_ex = is_kwcall ? params[3] : params[1]
-    # Both `typeof(f)` and `Type{T}` hold the callee as their last argument.
-    callee = callee_ex.args[end]
-    argtypes = is_kwcall ? [params[2]; params[4:end]] : params[2:end]
+    is_kwcall, callee_ex, argtypes = _split_signature(sig)
+    is_object = _is_object_callee(callee_ex)
+    # A called object is passed in as the argument after the keyword `NamedTuple`.
+    is_object && insert!(argtypes, is_kwcall + 1, callee_ex)
     args = [Symbol(:a, j) for j in eachindex(argtypes)]
     typed_args = [:($a::$T) for (a, T) in zip(args, argtypes)]
+    # Both `typeof(f)` and `Type{T}` hold the callee as their last argument.
+    callee = is_object ? args[is_kwcall+1] : callee_ex.args[end]
+    rest = args[(is_kwcall+is_object+1):end]
     call = if is_kwcall
-        :(Core.kwcall($(args[1]), $callee, $(args[2:end]...)))
+        :(Core.kwcall($(args[1]), $callee, $(rest...)))
     else
-        :($callee($(args...)))
+        :($callee($(rest...)))
     end
     wrapper = :(function $name($(typed_args...))
         return $call
@@ -222,7 +276,12 @@ function _write_project(workdir, pkg, sigs)
     open(joinpath(dir, "Project.toml"), "w") do io
         println(io, "[deps]")
         for root in _import_roots(pkg, sigs)
-            pkgid = Base.identify_package(String(root))
+            # A signature can name a dependency of `pkg` that the active environment lacks.
+            pkgid = @something(
+                Base.identify_package(String(root)),
+                Base.identify_package(Base.PkgId(pkg), String(root)),
+                Some(nothing),
+            )
             pkgid === nothing &&
                 error("cannot find package `$root` in the active environment")
             println(io, root, " = \"", pkgid.uuid, "\"")

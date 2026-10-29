@@ -5,7 +5,8 @@ Parse `--trace-compile` or `--trace-dispatch` output files (a path or a vector o
 and return the recorded signatures, as
 `Tuple{...}` expressions, whose callee is a public name of `pkg`. That covers positional
 calls `Tuple{typeof(f), A}`, keyword calls `Tuple{typeof(Core.kwcall), NamedTuple{...},
-typeof(f), A}` and constructor calls `Tuple{Type{T}, A}`.
+typeof(f), A}`, constructor calls `Tuple{Type{T}, A}` and calls to an object of a public
+type `Tuple{T{P}, A}`.
 
 A signature is dropped when it cannot be evaluated outside the recording process (for
 example types defined in the test files), has a non-concrete argument type, or calls a
@@ -101,6 +102,10 @@ function _callee_name(pkg, public, sig, abstract_params)
         ft.instance
     elseif Base.isType(ft)
         Base.unwrap_unionall(ft.parameters[1]).name.wrapper
+    elseif ft isa DataType && isconcretetype(ft)
+        # A call to an object of a public type, as in `layout = Layout(); layout(x)`.
+        !abstract_params && !_has_concrete_params(ft) && return nothing
+        ft.name.wrapper
     else
         return nothing
     end
