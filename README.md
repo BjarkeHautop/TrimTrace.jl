@@ -8,74 +8,56 @@
 [![Docs workflow Status](https://github.com/BjarkeHautop/TrimTrace.jl/actions/workflows/Docs.yml/badge.svg?branch=main)](https://github.com/BjarkeHautop/TrimTrace.jl/actions/workflows/Docs.yml?query=branch%3Amain)
 [![BestieTemplate](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/JuliaBesties/BestieTemplate.jl/main/docs/src/assets/badge.json)](https://github.com/JuliaBesties/BestieTemplate.jl)
 
-Check that your package's public API compiles under `juliac --trim=safe`, without writing
-the calls by hand.
+Check that your package's public API compiles under `juliac --trim=safe`, using the calls
+your test suite already makes instead of writing them by hand.
 
-TrimTrace runs your test suite under `--trace-compile`, keeps the concrete signatures of
-calls into the package's public names (positional, keyword and constructor calls), and
-compiles them as trim entry points with [JuliaC](https://github.com/JuliaLang/JuliaC.jl).
-Every verifier error is attributed to the recorded signature it was reached from.
-
-Requires Julia 1.12 or newer.
+TrimTrace runs your tests with `--trace-compile` and `--trace-dispatch`, keeps the concrete
+signatures of calls into the package's public names (including keyword and constructor
+calls), and compiles them as trim entry points with
+[JuliaC](https://github.com/JuliaLang/JuliaC.jl). Each verifier error is reported against
+the signature it was reached from. Requires Julia 1.12+.
 
 ## Usage
-
-Record once, and again whenever the tests change:
 
 ```julia
 using TrimTrace, MyPackage
 
-sigs = record(MyPackage)                 # runs test/runtests.jl in a child process
+# Record (rerun when the tests change); the file diffs cleanly, one signature per line.
+sigs = record(MyPackage)
 write_signatures("test/trim-signatures.txt", sigs)
-uncovered(MyPackage, sigs)               # public names the trace never saw
-```
+uncovered(MyPackage, sigs)   # public names no recorded call reaches
 
-Check the stored signatures, for example in CI:
-
-```julia
+# Check, e.g. in CI.
 result = check(MyPackage, "test/trim-signatures.txt"; allow = "test/trim-allow.txt")
 display(result)
 passed(result) || exit(1)
 ```
 
 ```text
-TrimTrace check failed: 171 errors (7 value-dependent), 0 warnings, 0 allowed
-  148 x CausalStructures.BackgroundKnowledge(::CausalStructures.CausalEdge)
-  1 x CausalStructures.DAG(::CausalStructures.CausalEdge, ::CausalStructures.CausalEdge)
-  1 x CausalStructures.generate_graph(::Int64; p::Float64, class::typeof(DataType)) [value-dependent]
-  ...
+TrimTrace check failed: 2 errors (1 value-dependent), 0 warnings, 0 allowed
+  1 x MyPackage.f(::Float64)
+  1 x MyPackage.g(::Int64; kind::DataType) [value-dependent]
 Full juliac output: /tmp/jl_.../juliac.log
 ```
 
-`allow` takes known failures, one per line in a file (or as a vector of strings and
-`Regex`es), written as the report prints the signature, for example
-`CausalStructures.layout(::CausalStructures.DAG)`. Allowed signatures are still compiled,
-so the report lists allowlist entries that no longer match anything once they are fixed.
+The allowlist holds known failures, one signature per line as the report prints it (or
+pass a vector of strings and `Regex`es). Entries that no longer match are reported as
+stale.
 
-The signatures file has one `Tuple{...}` per line in sorted order, so re-recording shows up
-as a diff. Delete a line to stop checking that signature, or pass `exclude` to `record`.
+## Limitations
 
-By default `check` builds against a generated project holding only the package and the
-packages the signatures reference, so juliac does not instantiate test-only dependencies
-such as plotting packages.
-
-## What a recorded signature can and cannot tell you
-
-- **Value-dependent calls.** A signature carries types, not values. Code that dispatches
-  on a value, such as `generate_graph(n; class = CPDAG)` or `layout(g, :spring)` via
-  `Val(method)`, only resolves when the argument is a compile-time constant at the call
-  site. The check sees `class::DataType` and reports an error, tagged `[value-dependent]`.
-  Such an error is real for callers that pass the value at run time and spurious for
-  callers that pass a literal.
-- **Missed calls.** `record` combines `--trace-compile` with `--trace-dispatch`. The first
-  alone misses any call whose specialization was already compiled as the callee of an
-  earlier call; the second logs every dynamically dispatched call, which covers top-level
-  test code. A call made from inside a compiled test helper with inferable argument types
-  is still missed; `uncovered` lists the public names no signature reaches.
-- **Varargs.** A trailing `Vararg{A}` in the trace is checked as one `A`. Calls are made
-  through generated wrapper functions with concrete argument types, like an ordinary call
-  site, rather than marking the bare signature as an entry point.
-- **Compile only.** The check compiles and verifies; it does not run the trimmed code.
+- **Values are not recorded, only types.** If a test calls `g(10; kind = Foo)`, TrimTrace
+  records "an `Int64` and some `DataType`", not `Foo` itself. Compiling that, the compiler
+  cannot tell which type `kind` is, so trimming fails. A user who writes
+  `g(10; kind = Foo)` in their own code is fine, because there the compiler sees `Foo`.
+  These errors are tagged `[value-dependent]` and are often false alarms.
+- **Some calls are missed.** TrimTrace sees calls by watching what Julia compiles and
+  dispatches during the tests. If a test calls `f` from inside a helper such as
+  `check(x) = f(x)`, the call to `f` can be compiled into `check` without being logged, so
+  it is never checked. `uncovered` lists public names that were never seen at all, but not
+  missing argument types for names that were.
+- **Varargs.** A call to `f(xs...)` recorded as "any number of `Int64`s" is checked as a
+  call with a single `Int64`.
 
 ## Related
 
