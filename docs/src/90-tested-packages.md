@@ -37,7 +37,7 @@ it, or get dropped if one of its argument types is abstract or defined in the te
 
 **Value-dependent** reports need a closer look. TrimTrace records only the types of the
 arguments, so a call written as `f(x; Ptype = Float32)` is checked as if `Ptype` were
-"some `DataType`". That is often harder for the compiler than the real call. To tell
+"some `DataType`". To tell
 whether such a report is a genuine problem, I compiled the same call with the literal
 value under `--trim=safe`.
 
