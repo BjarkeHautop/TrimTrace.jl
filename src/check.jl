@@ -28,8 +28,9 @@ end
 The outcome of [`check`](@ref).
 
   - `compiled`: `true` when juliac compiled the entry file.
-  - `errors`: the verifier reports not covered by the allowlist.
-  - `allowed`: the verifier reports covered by the allowlist.
+  - `errors`: the verifier reports that are not allowed.
+  - `allowed`: the verifier reports covered by the allowlist, or value-dependent with
+    `allow_value_dependent = true`.
   - `signatures`: the signatures that were checked.
   - `log`: the path of the full juliac output.
 
@@ -68,8 +69,8 @@ passed(result::TrimCheckResult) =
     isempty(result.errors) && (result.compiled || !isempty(result.allowed))
 
 """
-    check(pkg::Module, sigs; allow = [], project = nothing, workdir = mktempdir(),
-          julia_args = String[]) -> TrimCheckResult
+    check(pkg::Module, sigs; allow = [], allow_value_dependent = false, project = nothing,
+          workdir = mktempdir(), julia_args = String[]) -> TrimCheckResult
 
 Compile the signatures `sigs` with `juliac --trim=safe` and parse the verifier output.
 
@@ -83,6 +84,9 @@ Compile the signatures `sigs` with `juliac --trim=safe` and parse the verifier o
   against it. It can also be the path of a file with one entry per line (`#` starts a
   comment), where a line written as `r"..."` is a `Regex`, as in
   `r"^MyPkg\\.g\\(.*kind::DataType"`.
+- `allow_value_dependent = false`: allow every report tagged value-dependent (see
+  [`TrimError`](@ref TrimTrace.TrimError)), which usually only fails because the recorded
+  signature cannot express a constant argument.
 - `project = nothing`: the project juliac compiles in. With `nothing`, a project holding
   only `pkg` and the packages the signatures reference is generated in `workdir`, which
   keeps juliac from instantiating unrelated test dependencies.
@@ -121,6 +125,7 @@ function check(
     pkg::Module,
     sigs;
     allow = Union{String,Regex}[],
+    allow_value_dependent = false,
     project = nothing,
     workdir = mktempdir(),
     julia_args = String[],
@@ -154,14 +159,17 @@ function check(
         end
     end
     reports = [_relabel(err, sigs) for err in _parse_juliac_log(log)]
-    is_allowed(err) = any(pattern -> _matches(pattern, err.entry), allow)
-    return TrimCheckResult(
-        compiled,
-        filter(!is_allowed, reports),
-        filter(is_allowed, reports),
-        collect(Expr, sigs),
-        log,
-    )
+    errors, allowed = _split_allowed(reports, allow, allow_value_dependent)
+    return TrimCheckResult(compiled, errors, allowed, collect(Expr, sigs), log)
+end
+
+# Split `reports` into those not allowed and those allowed by `allow` or, with
+# `allow_value_dependent`, by their value-dependent tag.
+function _split_allowed(reports, allow, allow_value_dependent)
+    is_allowed(err) =
+        (allow_value_dependent && err.value_dependent) ||
+        any(pattern -> _matches(pattern, err.entry), allow)
+    return filter(!is_allowed, reports), filter(is_allowed, reports)
 end
 
 # The stripped lines of `path`, without blank lines and `#` comments.

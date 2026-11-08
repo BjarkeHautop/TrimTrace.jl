@@ -220,6 +220,17 @@ end
     @test !TrimTrace._matches(allow[1], "M.f(::Int64)")
 end
 
+@testitem "allow_value_dependent" tags = [:unit] begin
+    plain = TrimTrace.TrimError(:error, "msg", "M.f(::Int64)", false)
+    value = TrimTrace.TrimError(:error, "msg", "M.g(::DataType)", true)
+    reports = [plain, value]
+    @test TrimTrace._split_allowed(reports, String[], false) ==
+          (reports, TrimTrace.TrimError[])
+    @test TrimTrace._split_allowed(reports, String[], true) == ([plain], [value])
+    @test TrimTrace._split_allowed(reports, ["M.f(::Int64)"], true) ==
+          (TrimTrace.TrimError[], reports)
+end
+
 @testitem "failed compile without reports shows the juliac output" tags = [:unit] begin
     log = tempname()
     write(log, "Compiling...\nERROR: linker not found\n")
@@ -251,6 +262,16 @@ end
     @test occursin("Pkg.develop(path = \".\")", yml)
     # The fixture has no test/Project.toml, so `record` generates its test project.
     @test !occursin("--project=test", yml)
+
+    path = write_ci_workflow(
+        Fixture.DIR;
+        path = tempname() * ".yml",
+        allow_value_dependent = true,
+    )
+    @test occursin(
+        "record_and_check(TrimFixture; allow, allow_value_dependent = true)",
+        read(path, String),
+    )
 end
 
 @testitem "legacy test project includes the package dependencies" tags = [:unit] begin

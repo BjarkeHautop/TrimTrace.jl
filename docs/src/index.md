@@ -70,19 +70,35 @@ Signatures checked: 14 (listed in /tmp/jl_.../signatures.txt)
 Full juliac output: /tmp/jl_.../juliac.log
 ```
 
-An allowlist file holds accepted reports, each a signature as the report prints it or an
-`r"..."` pattern. The CI job uses `test/trim-allow.txt` when it exists:
+To accept a failure you cannot fix yet, or a `[value-dependent]` report that real callers
+would not hit (see Limitations below), add it to an allowlist file. Allowed reports are
+counted in the summary but no longer fail the check. Each line of the file is either
+
+- a signature copied exactly as the report prints it, or
+- a regular expression written as `r"..."`, which allows every signature it matches.
+
+Blank lines and lines starting with `#` are ignored. The CI job reads
+`test/trim-allow.txt` if it exists; locally, pass the path as `allow` (see above).
 
 ```text
+# test/trim-allow.txt
+
+# Allow exactly this signature:
 MyPackage.f(::Float64)
+
+# Allow any call to g that passes `kind` as a DataType:
 r"^MyPackage\.g\(.*kind::DataType"
 ```
+
+To accept every `[value-dependent]` report instead, pass `allow_value_dependent = true`
+to `record_and_check` (or to `write_ci_workflow` for the CI job).
 
 ## Limitations
 
 - **Only types are recorded.** A test calling `g(10; kind = Foo)` is checked
   as `g(::Int64; kind::DataType)`, which often fails to trim even though a caller writing
-  `kind = Foo` compiles fine. These reports are tagged `[value-dependent]`.
+  `kind = Foo` compiles fine. These reports are tagged `[value-dependent]`; allow them
+  one by one or all at once with `allow_value_dependent = true`.
 - **Some calls are missed.** A call made from inside a compiled test helper can be
   compiled into the helper without being logged. [`uncovered`](@ref) lists the public
   names no recorded call reaches.
