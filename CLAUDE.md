@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 TrimTrace.jl records the concrete call signatures a package's test suite makes into its
 public API, and checks that they compile under `juliac --trim=safe` (via JuliaC.jl). Needs
-Julia 1.12+. The README covers user-facing behaviour and known limitations
+Julia 1.13+. The README covers user-facing behaviour and known limitations
 (value-dependent calls, missed calls, varargs).
 
 ## Commands

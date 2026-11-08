@@ -19,7 +19,7 @@ signatures of calls into the package's public names, and compiles them as trim e
 
 ## Installation
 
-TrimTrace needs Julia 1.12 or later.
+TrimTrace needs Julia 1.13 or later.
 
 ```julia
 using Pkg

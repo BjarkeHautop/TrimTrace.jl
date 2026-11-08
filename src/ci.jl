@@ -79,7 +79,7 @@ every run checks the calls of the current tests. It fails when [`passed`](@ref) 
 
 # Keywords
 - `path`: the workflow file, by default `.github/workflows/TrimTrace.yml` in `pkg_path`.
-- `julia = "1"`: the Julia version the job runs (1.12 or later).
+- `julia = "1"`: the Julia version the job runs (1.13 or later).
 - `allow = "test/trim-allow.txt"`: the allowlist file, relative to `pkg_path`. The job
   uses it only when it exists.
 

@@ -1,7 +1,7 @@
 # Changes here will be overwritten by Copier
 AddPrecommitUpdateCI: false
 Authors: Bjarke Hautop Kristensen <bjarke.hautop@gmail.com>
-JuliaMinVersion: '1.12'
+JuliaMinVersion: '1.13'
 License: MIT
 LicenseCopyrightHolders: Bjarke Hautop Kristensen
 PackageName: TrimTrace
