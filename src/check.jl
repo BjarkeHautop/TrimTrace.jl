@@ -364,7 +364,8 @@ const REPORT_HEADER = r"^(Error|Warning) #\d+: "
 # One `TrimError` per verifier report in the juliac log, in log order. Its `entry` is the
 # generated `entry_<i>` wrapper frame, which `_relabel` maps back to a signature.
 function _parse_juliac_log(path::AbstractString)
-    lines = readlines(path)
+    # juliac inherits `--color=yes` from e.g. `Pkg.test`, so strip the ANSI escapes.
+    lines = [replace(line, r"\e\[[0-9;]*m" => "") for line in readlines(path)]
     starts = findall(line -> occursin(REPORT_HEADER, line), lines)
     errors = TrimError[]
     for (i, start) in enumerate(starts)
