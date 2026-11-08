@@ -2,6 +2,7 @@
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DocumenterCodeBlocks = "b6400b83-267f-4b55-9fd8-bffc853bdfd8"
 DocumenterDocstringStyle = "4cc0470b-6d85-5391-9027-e4f74231ca86"
+DocumenterDocstringStyleMarkers = "68597acc-23c7-55da-b90b-863e272e1ca0"
 LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
 TrimTrace = "d24e2464-b5b5-49d2-822d-39a9dd59af15"
 
@@ -11,4 +12,5 @@ DocumenterCodeBlocks = "1"
 
 [sources]
 DocumenterDocstringStyle = {rev = "opt-out-checks", url = "https://github.com/BjarkeHautop/DocumenterDocstringStyle.jl"}
+DocumenterDocstringStyleMarkers = {rev = "opt-out-checks", subdir = "DocumenterDocstringStyleMarkers", url = "https://github.com/BjarkeHautop/DocumenterDocstringStyle.jl"}
 TrimTrace = {path = ".."}

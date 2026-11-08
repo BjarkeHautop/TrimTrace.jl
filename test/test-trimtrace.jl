@@ -181,6 +181,24 @@ end
     kw_sig =
         :(Tuple{typeof(Core.kwcall),NamedTuple{(:k,),Tuple{typeof(DataType)}},typeof(M.f)})
     @test TrimTrace._relabel(value_err, [kw_sig]).value_dependent
+
+    # Colored output, as juliac writes when run under `Pkg.test`.
+    write(
+        log,
+        """
+        \e[91m\e[1mError #1: \e[22m\e[39m\e[91m\e[1munresolved call\e[22m\e[39m from statement string(
+        )::\e[31m\e[1mAny\e[22m\e[39m
+
+        Stacktrace:
+         [1] \e[0m\e[1munstable\e[22m\e[0m\e[1m(\e[22m\e[90mi\e[39m::\e[0mInt64\e[0m\e[1m)\e[22m
+         [2] \e[0m\e[1mentry_6\e[22m\e[0m\e[1m(\e[22m\e[90ma1\e[39m::\e[0mInt64\e[0m\e[1m)\e[22m
+
+        Trim verify finished with \e[91m\e[1m1 error\e[22m\e[39m, 0 warnings.
+        """,
+    )
+    errs = TrimTrace._parse_juliac_log(log)
+    @test length(errs) == 1
+    @test errs[1].entry == "entry_6(a1::Int64)"
 end
 
 @testitem "allowlist file with patterns" tags = [:unit] begin
@@ -200,6 +218,22 @@ end
     @test TrimTrace._matches(allow[2], "M.g(; n::Int64, kind::DataType)")
     @test !TrimTrace._matches(allow[2], "M.g(::Int64)")
     @test !TrimTrace._matches(allow[1], "M.f(::Int64)")
+end
+
+@testitem "failed compile without reports shows the juliac output" tags = [:unit] begin
+    log = tempname()
+    write(log, "Compiling...\nERROR: linker not found\n")
+    result = TrimTrace.TrimCheckResult(
+        false,
+        TrimTrace.TrimError[],
+        TrimTrace.TrimError[],
+        Expr[],
+        log,
+    )
+    @test !passed(result)
+    shown = sprint(show, MIME"text/plain"(), result)
+    @test occursin("juliac failed without verifier reports", shown)
+    @test occursin("ERROR: linker not found", shown)
 end
 
 @testitem "check rejects an empty signature list" tags = [:unit] setup = [Fixture] begin
@@ -257,6 +291,8 @@ end
     @test uncovered(TrimFixture, sigs) == [:uncalled]
 
     result = check(TrimFixture, sigs; project = Fixture.DIR)
+    # Surface the juliac output in the test log if juliac itself failed.
+    isempty(result.errors) && display(result)
     @test !result.compiled
     @test !passed(result)
     entries = unique(err.entry for err in result.errors if err.kind === :error)
