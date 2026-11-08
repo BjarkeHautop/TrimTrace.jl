@@ -46,7 +46,9 @@ jobs:
           julia --project=docs -e '
             using Documenter: DocMeta, doctest
             using TrimTrace
-            DocMeta.setdocmeta!(TrimTrace, :DocTestSetup, :(using TrimTrace); recursive=true)
+            # The examples load the demo package in test/fixtures, as in docs/make.jl.
+            fixture = joinpath(pwd(), "test", "fixtures", "TrimFixture")
+            DocMeta.setdocmeta!(TrimTrace, :DocTestSetup, :(using TrimTrace; $fixture in LOAD_PATH || push!(LOAD_PATH, $fixture)); recursive=true)
             doctest(TrimTrace)'
       - name: Generate and deploy documentation
         run: julia --project=docs docs/make.jl
