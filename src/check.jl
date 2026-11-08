@@ -422,6 +422,13 @@ function Base.show(io::IO, ::MIME"text/plain", result::TrimCheckResult)
         "$(length(result.allowed)) allowed",
     )
     _show_by_entry(io, result.errors)
+    # juliac failed before the verifier reported anything, so show why.
+    if !result.compiled && isempty(result.errors) && isempty(result.allowed)
+        println(io, "juliac failed without verifier reports; end of its output:")
+        for line in last(readlines(result.log), 30)
+            println(io, "  ", line)
+        end
+    end
     sigs_file = joinpath(dirname(result.log), "signatures.txt")
     println(io, "Signatures checked: $(length(result.signatures)) (listed in $sigs_file)")
     print(io, "Full juliac output: ", result.log)

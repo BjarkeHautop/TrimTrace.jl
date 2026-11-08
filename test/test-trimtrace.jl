@@ -202,6 +202,22 @@ end
     @test !TrimTrace._matches(allow[1], "M.f(::Int64)")
 end
 
+@testitem "failed compile without reports shows the juliac output" tags = [:unit] begin
+    log = tempname()
+    write(log, "Compiling...\nERROR: linker not found\n")
+    result = TrimTrace.TrimCheckResult(
+        false,
+        TrimTrace.TrimError[],
+        TrimTrace.TrimError[],
+        Expr[],
+        log,
+    )
+    @test !passed(result)
+    shown = sprint(show, MIME"text/plain"(), result)
+    @test occursin("juliac failed without verifier reports", shown)
+    @test occursin("ERROR: linker not found", shown)
+end
+
 @testitem "check rejects an empty signature list" tags = [:unit] setup = [Fixture] begin
     using .Fixture: TrimFixture
     @test_throws ArgumentError check(TrimFixture, Expr[])
@@ -257,6 +273,8 @@ end
     @test uncovered(TrimFixture, sigs) == [:uncalled]
 
     result = check(TrimFixture, sigs; project = Fixture.DIR)
+    # Surface the juliac output in the test log if juliac itself failed.
+    isempty(result.errors) && display(result)
     @test !result.compiled
     @test !passed(result)
     entries = unique(err.entry for err in result.errors if err.kind === :error)
