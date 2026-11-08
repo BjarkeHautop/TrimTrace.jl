@@ -35,24 +35,26 @@ Formatting is JuliaFormatter with `indent = 4`, `margin = 92`. The hooks include
 ## Architecture
 
 The pipeline is record → check, run together by `record_and_check` (locally or in CI);
-each stage is one file in `src/`, and `ci.jl` ties them together.
+each stage is one file in `src/`, and `ci.jl` ties them together. Only the user-facing
+functions are exported (`TrimError`/`TrimCheckResult` are `public`); everything else is
+`_`-prefixed and documented with comments instead of docstrings.
 
 - **`extract.jl`** parses `precompile(Tuple{...})` lines from trace files into `Expr`
   signatures. Each line is evaluated in a sandbox module that binds every loaded package
   by name but *not* `Main`, so types defined in test files fail to resolve and are dropped.
   It keeps only calls whose callee is a public name of the package (`typeof(f)`,
-  `Type{T}` constructors, an object of a public type, or `Core.kwcall` keyword calls), drops abstract argument types
-  and (unless `abstract_params`) abstract type parameters, and expands a trailing
+  `Type{T}` constructors, an object of a public type, or `Core.kwcall` keyword calls),
+  drops abstract argument types and (unless `abstract_params`) abstract type parameters, and expands a trailing
   `Vararg{A}` to a single `A`. Signatures are kept as `Expr`, not types, throughout.
 - **`record.jl`** runs the target package's test file in a child Julia process with both
-  `--trace-compile` and `--trace-dispatch`, then feeds both traces to `extract_signatures`.
+  `--trace-compile` and `--trace-dispatch`, then feeds both traces to `_extract_signatures`.
   Packages with legacy `[extras]`/`[targets]` test deps get a generated, instantiated temp
   test project (package deps plus test extras). Child processes drop inherited
   `JULIA_LOAD_PATH`/`JULIA_PROJECT` so `record` works when called under `Pkg.test`.
-- **`signatures-file.jl`** reads/writes the sorted one-`Tuple{...}`-per-line file and
-  implements `uncovered`.
+- **`signatures.jl`** implements `uncovered` and the helpers that split a signature
+  `Expr` into keyword flag, callee and argument types.
 - **`check.jl`** does the compile and reporting:
-  - `entry_file` writes a `TrimTraceEntry` module with one wrapper `entry_<i>` per
+  - `_entry_file` writes a `TrimTraceEntry` module with one wrapper `entry_<i>` per
     signature (concretely typed args that make the call), each marked with
     `Base.Experimental.entrypoint`. Wrappers are used instead of marking the signature
     directly so vararg methods are not widened to the generic `Vararg` specialization.
@@ -60,14 +62,13 @@ each stage is one file in `src/`, and `ci.jl` ties them together.
     the package and packages referenced in the signatures (dev'ed packages via
     `[sources]` path), avoiding test-only deps.
   - Only JuliaC's compile step runs (`--output-o`); output goes to `juliac.log`, which
-    `parse_juliac_log` splits into `TrimError`s. `_relabel` maps `entry_<i>(` back to
+    `_parse_juliac_log` splits into `TrimError`s. `_relabel` maps `entry_<i>(` back to
     signature `i`, rendered by `_signature_string` as `f(::A; k::K)` (or `(::T)(::A)` for
     a called object). A report keeps its `value_dependent` tag only if the signature passes
-    a `DataType`/`Symbol`/`Type{T}`-like value. Allowlist matching
-    and `stale` entries are computed on those rendered strings, so changing the rendering
-    changes the allowlist format.
-  - `check` also writes `signatures.txt` into `workdir` and keeps the signatures in the
-    result, so a run can be inspected afterwards.
+    a `DataType`/`Symbol`/`Type{T}`-like value. Allowlist matching is done on those
+    rendered strings, so changing the rendering changes the allowlist format.
+  - `check` also writes `signatures.txt` (the rendered signatures) into `workdir` and
+    keeps the signatures in the result, so a run can be inspected afterwards.
 - **`ci.jl`** has `record_and_check` (record then check) and `write_ci_workflow`, which
   writes a GitHub Actions job running it from an environment holding TrimTrace and the
   dev'ed package.

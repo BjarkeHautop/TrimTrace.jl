@@ -1,6 +1,8 @@
 # TrimTrace
 
+<!---
 [![Stable Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://BjarkeHautop.github.io/TrimTrace.jl/stable)
+-->
 [![Development documentation](https://img.shields.io/badge/docs-dev-blue.svg)](https://BjarkeHautop.github.io/TrimTrace.jl/dev)
 [![Test workflow status](https://github.com/BjarkeHautop/TrimTrace.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/BjarkeHautop/TrimTrace.jl/actions/workflows/Test.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/BjarkeHautop/TrimTrace.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/BjarkeHautop/TrimTrace.jl)
@@ -54,7 +56,7 @@ result.signatures                         # the recorded calls
 uncovered(MyPackage, result.signatures)   # public names no recorded call reaches
 ```
 
-`record` and `check` can also be ran as separate steps.
+`record` and `check` can also be run as separate steps.
 
 ### Output and allowlist
 
@@ -80,18 +82,13 @@ r"^MyPackage\.g\(.*kind::DataType"
 
 ## Limitations
 
-- **Only types are recorded.** If a test calls `g(10; kind = Foo)`, TrimTrace
-  records "an `Int64` and some `DataType`", not `Foo` itself. Compiling that, the compiler
-  cannot tell which type `kind` is, so trimming fails. A user who writes
-  `g(10; kind = Foo)` in their own code is fine, because there the compiler sees `Foo`.
-  These errors are tagged `[value-dependent]` and are often false alarms.
-- **Some calls are missed.** TrimTrace sees calls by watching what Julia compiles and
-  dispatches during the tests. If a test calls `f` from inside a helper such as
-  `check(x) = f(x)`, the call to `f` can be compiled into `check` without being logged, so
-  it is never checked. `uncovered` lists public names that were never seen at all, but not
-  missing argument types for names that were.
-- **Varargs.** A call to `f(xs...)` recorded as "any number of `Int64`s" is checked as a
-  call with a single `Int64`.
+- **Only types are recorded.** A test calling `g(10; kind = Foo)` is checked
+  as `g(::Int64; kind::DataType)`, which often fails to trim even though a caller writing
+  `kind = Foo` compiles fine. These reports are tagged `[value-dependent]`.
+- **Some calls are missed.** A call made from inside a compiled test helper can be
+  compiled into the helper without being logged. [`uncovered`](@ref) lists the public
+  names no recorded call reaches.
+- **Varargs** are checked as a call with a single argument of the recorded type.
 
 ## Documentation
 

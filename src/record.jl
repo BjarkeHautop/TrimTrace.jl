@@ -4,9 +4,9 @@
 
 Run the test suite of `pkg` with tracing on and return the public signatures it called.
 
-The test file runs in a fresh Julia process with `--trace-compile` and `--trace-dispatch`,
-and the traces are filtered as [`extract_signatures`](@ref) does, with the test environment
-added to the load path so types from packages only the tests load resolve.
+The test file runs in a fresh Julia process with `--trace-compile` and `--trace-dispatch`.
+A traced call is kept when its callee is a public name of `pkg` (a function, a
+constructor, or an object of a public type) and every argument type is concrete.
 
 # Arguments
 - `pkg::Module`: the package under test.
@@ -17,8 +17,10 @@ added to the load path so types from packages only the tests load resolve.
   `test/Project.toml` gets a generated test project holding the package, its
   dependencies and those test dependencies.
 - `test_file`: the file to run, by default `test/runtests.jl`.
-- `exclude = Symbol[]`: passed to [`extract_signatures`](@ref).
-- `abstract_params = false`: passed to [`extract_signatures`](@ref).
+- `exclude = Symbol[]`: names whose calls are dropped.
+- `abstract_params = false`: keep signatures whose argument types have an abstract type
+  parameter, as in `Vector{Any}`. Such containers come from tests passing mixed values
+  and dispatch dynamically on their elements, which a trimmed caller would avoid.
 - `julia_args = String[]`: arguments passed to the child process before the test file.
 
 # Returns
@@ -26,7 +28,8 @@ The recorded signatures, sorted and deduplicated.
 
 # Notes
 Failing tests only produce a warning, since the calls they made are still valid
-signatures.
+signatures. Calls whose types are defined in the test files are dropped, and a trailing
+`Vararg{A}` is recorded as a single `A`.
 
 `--trace-compile` alone misses a call whose specialization was already compiled as the
 callee of an earlier call; `--trace-dispatch` still logs it as long as the test makes the
@@ -68,7 +71,7 @@ function record(
             @warn "The tests exited with code $(proc.exitcode); keeping the calls they made"
         end
         sigs = _with_load_path(project) do
-            extract_signatures(pkg, filter(isfile, traces); exclude, abstract_params)
+            _extract_signatures(pkg, filter(isfile, traces); exclude, abstract_params)
         end
         isempty(sigs) && @warn "No public calls of $pkg were recorded"
         return sigs
