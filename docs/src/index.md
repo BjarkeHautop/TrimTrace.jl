@@ -35,6 +35,14 @@ write_ci_workflow()   # writes .github/workflows/TrimTrace.yml
 
 The job runs [`record_and_check`](@ref) on every push and pull request.
 
+To show that your package is checked to be trim compatible with TrimTrace you can add the badge
+[![TrimTrace](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/BjarkeHautop/TrimTrace.jl/main/docs/src/assets/badge.json)](https://github.com/BjarkeHautop/TrimTrace.jl)
+to its README:
+
+```markdown
+[![TrimTrace](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/BjarkeHautop/TrimTrace.jl/main/docs/src/assets/badge.json)](https://github.com/BjarkeHautop/TrimTrace.jl)
+```
+
 ### Locally
 
 Run the same check, or the steps on their own to look at what is recorded:
