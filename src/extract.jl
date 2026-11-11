@@ -1,4 +1,4 @@
-# Parses `--trace-compile`/`--trace-dispatch` files and returns the sorted, deduplicated
+# Parses a `--trace-dispatch` file and returns the sorted, deduplicated
 # `Tuple{...}` expressions whose callee is a public name of `pkg`: positional calls
 # `Tuple{typeof(f), A}`, keyword calls `Tuple{typeof(Core.kwcall), NamedTuple{...},
 # typeof(f), A}`, constructor calls `Tuple{Type{T}, A}` and calls to an object of a public
@@ -6,14 +6,14 @@
 # (types defined in the test files) or have a non-concrete argument type are dropped.
 function _extract_signatures(
     pkg::Module,
-    traces::AbstractVector{<:AbstractString};
+    trace::AbstractString;
     exclude = Symbol[],
     abstract_params = false,
 )
     sandbox = _sandbox_module()
     public = Set(names(pkg))
     sigs = Set{Expr}()
-    for line in Iterators.flatten(eachline.(traces))
+    for line in eachline(trace)
         tuple_ex = _parse_trace_line(line)
         tuple_ex === nothing && continue
         _bind_roots!(sandbox, tuple_ex)

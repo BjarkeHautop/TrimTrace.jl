@@ -13,8 +13,8 @@
 Check that your package's public API compiles under `juliac --trim=safe` by using the calls
 your test suite makes.
 
-TrimTrace runs your tests with `--trace-compile` and `--trace-dispatch`, keeps the concrete
-signatures of calls into the package's public names, and compiles them as trim entry points with
+TrimTrace runs your tests with `--trace-dispatch`, keeps the concrete signatures of calls
+into the package's public names, and compiles them as trim entry points with
 [JuliaC](https://github.com/JuliaLang/JuliaC.jl).
 
 ## Installation
@@ -65,54 +65,23 @@ result.signatures                         # the recorded calls
 uncovered(MyPackage, result.signatures)   # public names no recorded call reaches
 ```
 
-`record` and `check` can also be run as separate steps.
-
-### Output and allowlist
-
-The result lists the verifier reports, grouped by the signature they were reached from:
-
-```text
-TrimTrace check failed: 2 errors (1 value-dependent), 0 warnings, 0 allowed
-  1 x MyPackage.f(::Float64)
-  1 x MyPackage.g(::Int64; kind::DataType) [value-dependent]
-Signatures checked: 14 (listed in /tmp/jl_.../signatures.txt)
-Full juliac output: /tmp/jl_.../juliac.log
-```
-
-To accept a failure you cannot fix yet, or a `[value-dependent]` report that real callers
-would not hit (see Limitations below), add it to an allowlist file. Allowed reports are
-counted in the summary but no longer fail the check. Each line of the file is either
-
-- a signature copied exactly as the report prints it, or
-- a regular expression written as `r"..."`, which allows every signature it matches.
-
-Blank lines and lines starting with `#` are ignored. The CI job reads
-`test/trim-allow.txt` if it exists; locally, pass the path as `allow` (or pass a vector
-of strings and `Regex`es directly).
-
-```text
-# test/trim-allow.txt
-
-# Allow exactly this signature:
-MyPackage.f(::Float64)
-
-# Allow any call to g that passes `kind` as a DataType:
-r"^MyPackage\.g\(.*kind::DataType"
-```
-
-To accept every `[value-dependent]` report instead, pass `allow_value_dependent = true`
-to `record_and_check` (or to `write_ci_workflow` for the CI job).
+`record` and `check` can also be run as separate steps. To accept known failures, list
+them in `test/trim-allow.txt`; see
+[Output and allowlist](https://BjarkeHautop.github.io/TrimTrace.jl/dev/#Output-and-allowlist).
 
 ## Limitations
 
-- **Only types are recorded.** A test calling `g(10; kind = Foo)` is checked
-  as `g(::Int64; kind::DataType)`, which often fails to trim even though a caller writing
-  `kind = Foo` compiles fine. These reports are tagged `[value-dependent]`; allow them
-  one by one or all at once with `allow_value_dependent = true`.
-- **Some calls are missed.** A call made from inside a compiled test helper can be
-  compiled into the helper without being logged. [`uncovered`](@ref) lists the public
-  names no recorded call reaches.
-- **Varargs** are checked as a call with a single argument of the recorded type.
+- [Only argument types are recorded](
+  https://BjarkeHautop.github.io/TrimTrace.jl/dev/#Only-argument-types-are-recorded):
+  a type or symbol passed as an argument is checked as any `DataType` or `Symbol`, which
+  can fail where a literal would compile. These reports are tagged `[value-dependent]`.
+- [Calls made by other code are missed](
+  https://BjarkeHautop.github.io/TrimTrace.jl/dev/#Calls-made-by-other-code-are-missed):
+  only calls the test code makes itself are recorded, not those made from inside, say,
+  `map`.
+- [Some calls are dropped](https://BjarkeHautop.github.io/TrimTrace.jl/dev/#Some-calls-are-dropped):
+  calls with types defined in the tests, or with containers such as `Vector{Any}`.
+- [Varargs](https://BjarkeHautop.github.io/TrimTrace.jl/dev/#Varargs) are checked with a single argument in place of the varargs.
 
 ## Documentation
 
