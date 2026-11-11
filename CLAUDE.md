@@ -46,8 +46,13 @@ functions are exported (`TrimError`/`TrimCheckResult` are `public`); everything 
   `Type{T}` constructors, an object of a public type, or `Core.kwcall` keyword calls),
   drops abstract argument types and (unless `abstract_params`) abstract type parameters, and expands a trailing
   `Vararg{A}` to a single `A`. Signatures are kept as `Expr`, not types, throughout.
-- **`record.jl`** runs the target package's test file in a child Julia process with both
-  `--trace-compile` and `--trace-dispatch`, then feeds both traces to `_extract_signatures`.
+- **`record.jl`** runs the target package's test file in a child Julia process with
+  `--trace-dispatch`, through `trace_driver.jl`, then feeds the trace to
+  `_extract_signatures`. The driver compiles the test code without type inference
+  (`@compiler_options infer=false`) so every call it makes, even in loops, helpers and
+  closures, is dispatched and logged, while the package is compiled as usual; it also
+  wraps the file in a root test set so a bare failing `@test` does not end the run. Test
+  output is discarded.
   Packages with legacy `[extras]`/`[targets]` test deps get a generated, instantiated temp
   test project (package deps plus test extras). Child processes drop inherited
   `JULIA_LOAD_PATH`/`JULIA_PROJECT` so `record` works when called under `Pkg.test`.

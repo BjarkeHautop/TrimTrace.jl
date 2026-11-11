@@ -28,7 +28,7 @@ end
         "# comment line",
         "precompile(Tuple{typeof(TrimFixture.stable), TrimFixture.Box})",
     ])
-    sigs = TrimTrace._extract_signatures(TrimFixture, [trace])
+    sigs = TrimTrace._extract_signatures(TrimFixture, trace)
     @test string.(sigs) == [
         "Tuple{TrimFixture.Scaler, Int64}",
         "Tuple{Type{TrimFixture.Box}, Int64}",
@@ -37,7 +37,7 @@ end
         "Tuple{typeof(TrimFixture.unstable), Int64, Int64}",
     ]
     @test length(
-        TrimTrace._extract_signatures(TrimFixture, [trace]; exclude = [:stable, :Box]),
+        TrimTrace._extract_signatures(TrimFixture, trace; exclude = [:stable, :Box]),
     ) == 3
 end
 
@@ -52,12 +52,12 @@ end
         "precompile(Tuple{typeof(TrimFixture.stable), Array{Union{Nothing, Int64}, 1}})",
         "precompile(Tuple{typeof(TrimFixture.stable), Base.RefValue{Type{Int64}}})",
     ])
-    @test string.(TrimTrace._extract_signatures(TrimFixture, [trace])) == [
+    @test string.(TrimTrace._extract_signatures(TrimFixture, trace)) == [
         "Tuple{typeof(TrimFixture.stable), Array{Union{Nothing, Int64}, 1}}",
         "Tuple{typeof(TrimFixture.stable), Base.RefValue{Type{Int64}}}",
     ]
     @test length(
-        TrimTrace._extract_signatures(TrimFixture, [trace]; abstract_params = true),
+        TrimTrace._extract_signatures(TrimFixture, trace; abstract_params = true),
     ) == 6
 end
 
