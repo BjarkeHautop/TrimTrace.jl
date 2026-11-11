@@ -48,10 +48,11 @@ functions are exported (`TrimError`/`TrimCheckResult` are `public`); everything 
   `Vararg{A}` to a single `A`. Signatures are kept as `Expr`, not types, throughout.
 - **`record.jl`** runs the target package's test file in a child Julia process with
   `--trace-dispatch`, through `trace_driver.jl`, then feeds the trace to
-  `_extract_signatures`. The driver interprets the test code (`@compiler_options
-  compile=min`) so every call it makes, even in loops and helpers, is dispatched and
-  logged, while the package stays compiled; it also wraps the file in a root test set so a
-  bare failing `@test` does not end the run. Test output is discarded.
+  `_extract_signatures`. The driver compiles the test code without type inference
+  (`@compiler_options infer=false`) so every call it makes, even in loops, helpers and
+  closures, is dispatched and logged, while the package is compiled as usual; it also
+  wraps the file in a root test set so a bare failing `@test` does not end the run. Test
+  output is discarded.
   Packages with legacy `[extras]`/`[targets]` test deps get a generated, instantiated temp
   test project (package deps plus test extras). Child processes drop inherited
   `JULIA_LOAD_PATH`/`JULIA_PROJECT` so `record` works when called under `Pkg.test`.
