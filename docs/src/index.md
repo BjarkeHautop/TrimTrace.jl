@@ -130,6 +130,10 @@ map(MyPkg.area, [1, 2])  # area(::Int64) is not recorded
 [`uncovered`](@ref) lists the public names no recorded call reaches. To check such a
 call, make it directly once in the tests.
 
+Alternatively, `record(MyPkg; julia_args = ["--compile=min"])` records these calls too,
+but also the package's calls to its own public functions, and can be much slower (about
+7× for CausalStructures.jl).
+
 ### Some calls are dropped
 
 A call is dropped when an argument type is defined in the test files, since the check

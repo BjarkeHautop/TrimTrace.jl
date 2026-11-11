@@ -45,9 +45,7 @@ the package's hand-written check doesn't cover.
 
 The error is `SugiyamaLayout(; Ptype::DataType)`. `Ptype` sets the output point type, and
 as a runtime `DataType` the layout's type can't be inferred. With a literal, as in
-`SugiyamaLayout(; Ptype = Float32)`, it compiles; the package's
-[TrimCheck workflow](https://github.com/BjarkeHautop/Sugiyama.jl/blob/main/.github/workflows/TrimCheck.yml)
-checks exactly that call. Its allowlist:
+`SugiyamaLayout(; Ptype = Float32)`, it compiles. Its allowlist:
 
 ```text
 # `Ptype` is a literal type in real calls; only the recorded DataType fails to infer.
@@ -64,7 +62,7 @@ All six errors come from the `class` keyword of `generate_graph`, which picks th
 graph to return; as a runtime `DataType`, the return type can't be inferred. With a
 literal, as in `generate_graph(10; p = 0.3, class = ADMG, latents = 2)`, it compiles, with
 or without an explicit RNG; the package's
-[TrimCheck workflow](https://github.com/BjarkeHautop/CausalStructures.jl/blob/main/.github/workflows/TrimCheck.yml)
+[TrimCheck workflow](https://github.com/BjarkeHautop/CausalStructures.jl/blob/main/trim-check/entry.jl)
 checks both forms. Its allowlist:
 
 ```text
