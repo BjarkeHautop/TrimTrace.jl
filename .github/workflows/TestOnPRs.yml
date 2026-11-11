@@ -21,9 +21,15 @@ jobs:
     uses: ./.github/workflows/ReusableTest.yml
     with:
       os: ubuntu-latest
-      version: "1"
+      version: ${{ matrix.version }}
       arch: default
       allow_failure: false
-      run_codecov: true
+      run_codecov: ${{ matrix.version == '1' }}
     secrets:
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - "1"
+          - "nightly"
