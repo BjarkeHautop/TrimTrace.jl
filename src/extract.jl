@@ -1,8 +1,8 @@
 # Parses a `--trace-dispatch` file and returns the sorted, deduplicated
 # `Tuple{...}` expressions whose callee is a public name of `pkg`: positional calls
 # `Tuple{typeof(f), A}`, keyword calls `Tuple{typeof(Core.kwcall), NamedTuple{...},
-# typeof(f), A}`, constructor calls `Tuple{Type{T}, A}` and calls to an object of a public
-# type `Tuple{T{P}, A}`. Signatures that do not evaluate outside the recording process
+# typeof(f), A}`, constructor calls `Tuple{Type{T}, A}` (`Tuple{Core.TypeEgal{T}, A}` on
+# Julia 1.14+) and calls to an object of a public type `Tuple{T{P}, A}`. Signatures that do not evaluate outside the recording process
 # (types defined in the test files) or have a non-concrete argument type are dropped.
 function _extract_signatures(
     pkg::Module,
@@ -86,7 +86,7 @@ function _callee_name(pkg, public, sig, abstract_params)
     obj = if ft isa DataType && isdefined(ft, :instance) && ft.instance isa Function
         ft.instance
     elseif Base.isType(ft)
-        Base.unwrap_unionall(ft.parameters[1]).name.wrapper
+        Base.unwrap_unionall(_type_param(ft)).name.wrapper
     elseif ft isa DataType && isconcretetype(ft)
         # A call to an object of a public type, as in `layout = Layout(); layout(x)`.
         !abstract_params && !_has_concrete_params(ft) && return nothing
@@ -106,6 +106,10 @@ function _expand_vararg(tuple_ex::Expr)
     Meta.isexpr(last_ex, :curly) && last_ex.args[1] === :Vararg || return tuple_ex
     return Expr(:curly, tuple_ex.args[1:(end-1)]..., last_ex.args[2])
 end
+
+# `T` from `Type{T}` or Julia 1.14's `Core.TypeEgal{T}`, without reading `.parameters`,
+# which Julia 1.14 deprecates for these types.
+_type_param(::Type{<:Type{T}}) where {T} = T
 
 function _is_valid_arg(T)
     T isa Core.TypeofVararg && return isdefined(T, :T) && _is_valid_arg(T.T)

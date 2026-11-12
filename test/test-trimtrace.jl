@@ -41,6 +41,18 @@ end
     ) == 3
 end
 
+@testitem "_extract_signatures keeps Core.TypeEgal callees" tags = [:unit] setup = [Fixture] begin
+    using .Fixture: TrimFixture
+    # Julia 1.14 traces a constructor call as `Core.TypeEgal{T}`.
+    if VERSION >= v"1.14-"
+        trace =
+            Fixture.trace_file(["precompile(Tuple{Core.TypeEgal{TrimFixture.Box}, Int64})"])
+        sigs = TrimTrace._extract_signatures(TrimFixture, trace)
+        @test string.(sigs) == ["Tuple{Core.TypeEgal{TrimFixture.Box}, Int64}"]
+        @test :Box ∉ uncovered(TrimFixture, sigs)
+    end
+end
+
 @testitem "_extract_signatures drops abstract type parameters" tags = [:unit] setup =
     [Fixture] begin
     using .Fixture: TrimFixture
@@ -79,6 +91,7 @@ end
     # A constructor recorded through a `where` clause still names its type.
     @test TrimTrace._signature_callee(:(Tuple{Type{M.T{P} where P},Int64})) === :T
     @test TrimTrace._signature_callee(:(Tuple{M.T{Int64},Int64})) === :T
+    @test TrimTrace._signature_callee(:(Tuple{Core.TypeEgal{M.T{P} where P},Int64})) === :T
 end
 
 @testitem "_entry_file wrappers make the recorded calls" tags = [:unit] setup = [Fixture] begin
@@ -94,6 +107,8 @@ end
         :(Tuple{typeof(TrimFixture.stable),TrimFixture.Box}),
         :(Tuple{TrimFixture.Scaler,Int64}),
     ]
+    # Julia 1.14 traces a constructor call as `Core.TypeEgal{T}`.
+    VERSION >= v"1.14-" && push!(sigs, :(Tuple{Core.TypeEgal{TrimFixture.Box},Int64}))
     path = TrimTrace._entry_file(tempname() * ".jl", TrimFixture, sigs)
     src = read(path, String)
     @test occursin("import TrimFixture\n", src)
@@ -110,6 +125,7 @@ end
     @test entry.TrimTraceEntry.entry_2((; factor = 5), 3) == 15
     @test entry.TrimTraceEntry.entry_3(TrimFixture.Box(1)) == 2
     @test entry.TrimTraceEntry.entry_4(TrimFixture.Scaler(2), 3) == 6
+    VERSION >= v"1.14-" && @test entry.TrimTraceEntry.entry_5(3) == TrimFixture.Box(3)
 end
 
 @testitem "signature labels" tags = [:unit] begin
@@ -122,6 +138,7 @@ end
     @test TrimTrace._signature_string(sig) == "M.f(::String; a::Int64, b::Symbol)"
     @test TrimTrace._signature_string(:(Tuple{Type{M.T},Int64,Int64})) ==
           "M.T(::Int64, ::Int64)"
+    @test TrimTrace._signature_string(:(Tuple{Core.TypeEgal{M.T},Int64})) == "M.T(::Int64)"
     @test TrimTrace._signature_string(:(Tuple{typeof(M.g)})) == "M.g()"
     ntuple_sig =
         :(Tuple{typeof(Core.kwcall),NamedTuple{(:a, :b, :c),NTuple{3,Float64}},typeof(M.f)})
@@ -178,6 +195,7 @@ end
     value_err = TrimTrace.TrimError(:error, "", "entry_1(a1::Int64)", true)
     @test !TrimTrace._relabel(value_err, [:(Tuple{typeof(M.f),Int64})]).value_dependent
     @test TrimTrace._relabel(value_err, [:(Tuple{typeof(M.f),Symbol})]).value_dependent
+    @test TrimTrace._relabel(value_err, [:(Tuple{typeof(M.f),Core.TypeEgal{Float64}})]).value_dependent
     kw_sig =
         :(Tuple{typeof(Core.kwcall),NamedTuple{(:k,),Tuple{typeof(DataType)}},typeof(M.f)})
     @test TrimTrace._relabel(value_err, [kw_sig]).value_dependent

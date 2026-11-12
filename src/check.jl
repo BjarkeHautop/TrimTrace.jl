@@ -213,7 +213,7 @@ function _passes_values(sig::Expr)
     types = is_kwcall ? [last.(_kwarg_types(argtypes[1])); argtypes[2:end]] : argtypes
     return any(types) do T
         T = _normalize_type(T)
-        T in VALUE_TYPES || Meta.isexpr(T, :curly) && T.args[1] === :Type
+        T in VALUE_TYPES || _is_type_expr(T)
     end
 end
 

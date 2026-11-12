@@ -70,5 +70,9 @@ function _split_signature(sig::Expr)
 end
 
 _is_object_callee(callee) =
-    !(Meta.isexpr(callee, :call) && callee.args[1] === :typeof) &&
-    !(Meta.isexpr(callee, :curly) && callee.args[1] === :Type)
+    !(Meta.isexpr(callee, :call) && callee.args[1] === :typeof) && !_is_type_expr(callee)
+
+# `Type{T}`, or `Core.TypeEgal{T}`, which Julia 1.14 traces for a type passed as a value or
+# called as a constructor.
+_is_type_expr(ex) =
+    Meta.isexpr(ex, :curly) && (ex.args[1] === :Type || ex.args[1] == :(Core.TypeEgal))
