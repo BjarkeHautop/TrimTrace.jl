@@ -15,7 +15,7 @@ TrimTrace needs Julia 1.13 or later.
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/BjarkeHautop/TrimTrace.jl")
+Pkg.add("TrimTrace")
 ```
 
 ## Workflow

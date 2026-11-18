@@ -1,8 +1,6 @@
 # TrimTrace
 
-<!---
 [![Stable Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://BjarkeHautop.github.io/TrimTrace.jl/stable)
--->
 [![Development documentation](https://img.shields.io/badge/docs-dev-blue.svg)](https://BjarkeHautop.github.io/TrimTrace.jl/dev)
 [![Test workflow status](https://github.com/BjarkeHautop/TrimTrace.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/BjarkeHautop/TrimTrace.jl/actions/workflows/Test.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/BjarkeHautop/TrimTrace.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/BjarkeHautop/TrimTrace.jl)
@@ -23,7 +21,7 @@ TrimTrace needs Julia 1.13 or later.
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/BjarkeHautop/TrimTrace.jl")
+Pkg.add("TrimTrace")
 ```
 
 ## Usage

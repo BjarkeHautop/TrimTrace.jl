@@ -64,8 +64,6 @@ function record_and_check(
     return check(pkg, sigs; allow, allow_value_dependent, workdir)
 end
 
-const TRIMTRACE_URL = "https://github.com/BjarkeHautop/TrimTrace.jl"
-
 """
     write_ci_workflow(pkg_path = pwd(); path, julia = "1", allow = "test/trim-allow.txt",
                       allow_value_dependent = false) -> String
@@ -156,7 +154,7 @@ function _ci_workflow(name, has_test_project, julia, allow, allow_value_dependen
             run: |
               julia --project=@trimtrace -e '
                 using Pkg
-                Pkg.add(url = "$TRIMTRACE_URL")
+                Pkg.add("TrimTrace")
                 Pkg.develop(path = ".")'
     $(instantiate)      - name: Record the tests and check the calls with --trim=safe
             run: |

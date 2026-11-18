@@ -29,8 +29,7 @@ julia --project=docs docs/make.jl
 prek run --all-files
 ```
 
-Formatting is JuliaFormatter with `indent = 4`, `margin = 92`. The hooks include
-`no-commit-to-branch`, so commits on `main` are rejected by the hook; work on a branch.
+Formatting is JuliaFormatter with `indent = 4`, `margin = 92`.
 
 ## Architecture
 
