@@ -3,7 +3,8 @@
 
 One error or warning reported by the trim verifier.
 
-  - `kind`: `:error` or `:warning`.
+  - `kind`: `:error` or `:warning`. Only errors make juliac fail. If a run reports both,
+    every report is an `:error`, since the juliac output does not tell them apart.
   - `message`: the verifier's description, including the unresolved statement.
   - `entry`: the signature the problem was reached from, as the report prints it, such
     as `MyPkg.f(::Int64; k::Symbol)`. Without a stack trace it is the callee of the
@@ -14,6 +15,9 @@ One error or warning reported by the trim verifier.
     [`check`](@ref) result it is also required that the signature passes such a value
     (a `DataType`, `Symbol`, `Type{T}`, ...), since otherwise the value comes from inside
     the package and every caller hits the error.
+
+Reports are created by [`check`](@ref). The constructor is not public API, and fields may
+be added in minor releases.
 """
 struct TrimError
     kind::Symbol
@@ -28,13 +32,16 @@ end
 The outcome of [`check`](@ref).
 
   - `compiled`: `true` when juliac compiled the entry file.
-  - `errors`: the verifier reports that are not allowed.
+  - `errors`: the verifier reports, errors and warnings, that are not allowed.
   - `allowed`: the verifier reports covered by the allowlist, or value-dependent with
     `allow_value_dependent = true`.
   - `signatures`: the signatures that were checked.
   - `log`: the path of the full juliac output.
 
 Use [`passed`](@ref) to decide the outcome.
+
+Results are created by [`check`](@ref). The constructor is not public API, and fields may
+be added in minor releases.
 """
 struct TrimCheckResult
     compiled::Bool
@@ -54,19 +61,23 @@ Decide whether a [`check`](@ref) succeeded.
 
 # Returns
 `true` when every verifier report is allowed and juliac either compiled the entry file or
-failed only because of allowed reports.
+failed only because of allowed errors.
 
 # Examples
 ```jldoctest
-julia> result = TrimTrace.TrimCheckResult(
-           true, TrimTrace.TrimError[], TrimTrace.TrimError[], Expr[], "juliac.log");
+julia> using TrimFixture  # the demo package in test/fixtures
+
+julia> sigs = [:(Tuple{typeof(TrimFixture.stable), TrimFixture.Box})];
+
+julia> result = check(TrimFixture, sigs; project = pkgdir(TrimFixture));
 
 julia> passed(result)
 true
 ```
 """
 passed(result::TrimCheckResult) =
-    isempty(result.errors) && (result.compiled || !isempty(result.allowed))
+    isempty(result.errors) &&
+    (result.compiled || any(err -> err.kind === :error, result.allowed))
 
 """
     check(pkg::Module, sigs; allow = [], allow_value_dependent = false, project = nothing,
@@ -380,8 +391,16 @@ function _parse_juliac_log(path::AbstractString)
         stop = i < length(starts) ? starts[i+1] - 1 : _report_end(lines, start)
         push!(errors, _parse_report(lines[start:stop]))
     end
-    return errors
+    return _only_warnings(lines) ? _as_warning.(errors) : errors
 end
+
+# Julia prints `Error #` in front of warnings too, and only the closing counts tell them
+# apart, as in `Trim verify finished with 0 errors, 2 warnings.`
+_only_warnings(lines) =
+    any(line -> occursin(r"^Trim verify finished with 0 errors, [1-9]", line), lines)
+
+_as_warning(err::TrimError) =
+    TrimError(:warning, err.message, err.entry, err.value_dependent)
 
 function _report_end(lines, start)
     stop = findnext(line -> startswith(line, "Trim verify finished"), lines, start)
@@ -431,9 +450,9 @@ function Base.show(io::IO, ::MIME"text/plain", result::TrimCheckResult)
         "$(length(result.allowed)) allowed",
     )
     _show_by_entry(io, result.errors)
-    # juliac failed before the verifier reported anything, so show why.
-    if !result.compiled && isempty(result.errors) && isempty(result.allowed)
-        println(io, "juliac failed without verifier reports; end of its output:")
+    # juliac failed although the verifier reported no error, so show why.
+    if !passed(result) && isempty(result.errors)
+        println(io, "juliac failed without verifier errors; end of its output:")
         for line in last(readlines(result.log), 30)
             println(io, "  ", line)
         end

@@ -217,6 +217,24 @@ end
     errs = TrimTrace._parse_juliac_log(log)
     @test length(errs) == 1
     @test errs[1].entry == "entry_6(a1::Int64)"
+    @test errs[1].kind === :error
+
+    # Julia prints `Error #` for warnings too; the closing counts tell them apart.
+    function kinds(counts)
+        write(
+            log,
+            """
+            Error #1: unresolved opaque closure from statement a
+            Error #1: unresolved call from statement b
+            Trim verify finished with $counts.
+            """,
+        )
+        return [err.kind for err in TrimTrace._parse_juliac_log(log)]
+    end
+    @test kinds("0 errors, 2 warnings") == [:warning, :warning]
+    @test kinds("0 errors, \e[93m\e[1m2 warnings\e[22m\e[39m") == [:warning, :warning]
+    @test kinds("2 errors, 0 warnings") == [:error, :error]
+    @test kinds("1 error, 1 warning") == [:error, :error]
 end
 
 @testitem "allowlist file with patterns" tags = [:unit] begin
@@ -249,7 +267,7 @@ end
           (TrimTrace.TrimError[], reports)
 end
 
-@testitem "failed compile without reports shows the juliac output" tags = [:unit] begin
+@testitem "failed compile without errors shows the juliac output" tags = [:unit] begin
     log = tempname()
     write(log, "Compiling...\nERROR: linker not found\n")
     result = TrimTrace.TrimCheckResult(
@@ -261,8 +279,18 @@ end
     )
     @test !passed(result)
     shown = sprint(show, MIME"text/plain"(), result)
-    @test occursin("juliac failed without verifier reports", shown)
+    @test occursin("juliac failed without verifier errors", shown)
     @test occursin("ERROR: linker not found", shown)
+
+    # A warning does not make juliac fail, so allowing one does not excuse the failure.
+    report(kind) = TrimTrace.TrimError(kind, "message", "MyPkg.f(::Int64)", false)
+    with_allowed(allowed...) =
+        TrimTrace.TrimCheckResult(false, TrimTrace.TrimError[], [allowed...], Expr[], log)
+    result = with_allowed(report(:warning))
+    @test !passed(result)
+    @test occursin("ERROR: linker not found", sprint(show, MIME"text/plain"(), result))
+    @test passed(with_allowed(report(:error)))
+    @test passed(with_allowed(report(:warning), report(:error)))
 end
 
 @testitem "check rejects an empty signature list" tags = [:unit] setup = [Fixture] begin
