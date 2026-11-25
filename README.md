@@ -65,25 +65,25 @@ uncovered(MyPackage, result.signatures)   # public names no recorded call reache
 
 `record` and `check` can also be run as separate steps. To accept known failures, list
 them in `test/trim-allow.txt`; see
-[Output and allowlist](https://BjarkeHautop.github.io/TrimTrace.jl/dev/#Output-and-allowlist).
+[Output and allowlist](https://BjarkeHautop.github.io/TrimTrace.jl/stable/#Output-and-allowlist).
 
 ## Limitations
 
 - [Only argument types are recorded](
-  https://BjarkeHautop.github.io/TrimTrace.jl/dev/#Only-argument-types-are-recorded):
+  https://BjarkeHautop.github.io/TrimTrace.jl/stable/#Only-argument-types-are-recorded):
   a type or symbol passed as an argument is checked as any `DataType` or `Symbol`, which
   can fail where a literal would compile. These reports are tagged `[value-dependent]`.
 - [Calls made by other code are missed](
-  https://BjarkeHautop.github.io/TrimTrace.jl/dev/#Calls-made-by-other-code-are-missed):
+  https://BjarkeHautop.github.io/TrimTrace.jl/stable/#Calls-made-by-other-code-are-missed):
   only calls the test code makes itself are recorded, not those made from inside, say,
   `map`.
-- [Some calls are dropped](https://BjarkeHautop.github.io/TrimTrace.jl/dev/#Some-calls-are-dropped):
+- [Some calls are dropped](https://BjarkeHautop.github.io/TrimTrace.jl/stable/#Some-calls-are-dropped):
   calls with types defined in the tests, or with containers such as `Vector{Any}`.
-- [Varargs](https://BjarkeHautop.github.io/TrimTrace.jl/dev/#Varargs) are checked with a single argument in place of the varargs.
+- [Varargs](https://BjarkeHautop.github.io/TrimTrace.jl/stable/#Varargs) are checked with a single argument in place of the varargs.
 
 ## Documentation
 
-See the [documentation](https://BjarkeHautop.github.io/TrimTrace.jl/dev) for more details.
+See the [documentation](https://BjarkeHautop.github.io/TrimTrace.jl/stable) for more details.
 
 ## Related
 
